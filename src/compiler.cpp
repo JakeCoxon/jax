@@ -29,7 +29,7 @@ struct Token {
     TokenType type;
     std::string_view text;
     int line;
-    int index;
+    int indexInLine;
 };
 
 struct Scanner {
@@ -37,11 +37,15 @@ struct Scanner {
     size_t start = 0;
     size_t current = 0;
     size_t lineStart = 0;
+    int indexInLine = 0;
     int line = 1;
 
     Token scanToken();
     void skipWhitespace();
     bool match(char expected);
+
+    Token string();
+    Token number();
 
     char peek() { return source[current]; }
     bool isAtEnd() { return current == source.size(); }
@@ -57,11 +61,11 @@ struct Scanner {
 
     Token makeToken(TokenType type) {
         auto text = std::string_view(&source[start], current - start);
-        return Token { type, text, line, (int) (start - lineStart) };
+        return Token { type, text, line, indexInLine };
     }
 
     Token errorToken(const std::string& message) {
-        return Token { TokenType::Error, message, line, (int) (start - lineStart) };
+        return Token { TokenType::Error, message, line, indexInLine };
     }
 };
 
@@ -77,7 +81,7 @@ void compile(const std::string &source) {
         } else {
             printf("   | ");
         }
-        printf("%2d ", token.index);
+        printf("%2d ", token.indexInLine);
         printf("%2d ", token.type);
         std::cout << "'" << token.text << "'" << std::endl;
 
@@ -103,9 +107,8 @@ void Scanner::skipWhitespace() {
                 advance();
                 break;
             case '\n':
-                line ++;
+                line ++; lineStart = current + 1;
                 advance();
-                lineStart = current;
                 break;
             case '/':
                 if (peekNext() == '/') {
@@ -119,14 +122,20 @@ void Scanner::skipWhitespace() {
     }
 }
 
+static bool isDigit(char c) {
+    return c >= '0' && c <= '9';
+}
+
 Token Scanner::scanToken() {
     skipWhitespace();
 
     start = current;
+    indexInLine = (int) (start - lineStart);
 
     if (isAtEnd()) return makeToken(TokenType::EOF_);
 
     char c = advance();
+    if (isDigit(c)) return number();
 
     switch (c) {
         case '(': return makeToken(TokenType::LeftParen);
@@ -152,8 +161,32 @@ Token Scanner::scanToken() {
         case '>':
             return makeToken(
                 match('=') ? TokenType::GreaterEqual : TokenType::Greater);
-
+        case '"': return string();
     }
 
     return errorToken("Unexpected character.");
+}
+
+Token Scanner::string() {
+    while (peek() != '"' && !isAtEnd()) {
+        if (peek() == '\n') { 
+            line ++; lineStart = current + 1;
+        }
+        advance();
+    }
+
+    if (isAtEnd()) return errorToken("Unterminated string");
+    advance(); // Closing quote
+    return makeToken(TokenType::String);
+}
+
+Token Scanner::number() {
+    while (isDigit(peek())) advance();
+
+    if (peek() == '.' && isDigit(peekNext())) {
+        advance();
+
+        while (isDigit(peek())) advance();
+    }
+    return makeToken(TokenType::Number);
 }
