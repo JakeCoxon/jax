@@ -6,6 +6,10 @@
 
 enum class OpCode: uint8_t {
     Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
     Negate,
     Return,
 };
@@ -50,6 +54,7 @@ struct VM {
 
     InterpretResult interpret(Chunk *chunk);
     InterpretResult run();
+    void binaryOperation(OpCode instruction);
 
     void resetStack() { stack.clear(); };
     void push(Value value) { stack.push_back(value); }
@@ -93,6 +98,13 @@ InterpretResult VM::run() {
                 push(constant);
                 break;
             }
+            case OpCode::Add:
+            case OpCode::Subtract:
+            case OpCode::Multiply:
+            case OpCode::Divide: {
+                binaryOperation(instruction);
+                break;
+            }
             case OpCode::Negate: push(-pop()); break;
             case OpCode::Return: {
                 printValue(pop());
@@ -100,6 +112,19 @@ InterpretResult VM::run() {
                 return InterpretResult::Ok;
             }
         }
+    }
+}
+
+void VM::binaryOperation(OpCode instruction) {
+    double b = pop();
+    double a = pop();
+
+    switch (instruction) {
+        case OpCode::Add:       { push(a + b); break; }
+        case OpCode::Subtract:  { push(a - b); break; }
+        case OpCode::Multiply:  { push(a * b); break; }
+        case OpCode::Divide:    { push(a / b); break; }
+        default: {}
     }
 }
 
@@ -130,6 +155,14 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
     switch (instruction) {
         case OpCode::Constant:
             return constantInstruction("Constant", chunk, offset);
+        case OpCode::Add:
+            return simpleInstruction("Add", offset);
+        case OpCode::Subtract:
+            return simpleInstruction("Subtract", offset);
+        case OpCode::Multiply:
+            return simpleInstruction("Multiply", offset);
+        case OpCode::Divide:
+            return simpleInstruction("Divide", offset);
         case OpCode::Negate:
             return simpleInstruction("Negate", offset);
         case OpCode::Return:
@@ -157,6 +190,18 @@ int main(int argc, const char* argv[]) {
     int constant = chunk.addConstant(1.2);
     chunk.write(OpCode::Constant, 123);
     chunk.write(constant, 123);
+
+    constant = chunk.addConstant(3.4);
+    chunk.write(OpCode::Constant, 123);
+    chunk.write(constant, 123);
+
+    chunk.write(OpCode::Add, 123);
+
+    constant = chunk.addConstant(5.6);
+    chunk.write(OpCode::Constant, 123);
+    chunk.write(constant, 123);
+
+    chunk.write(OpCode::Divide, 123);
     chunk.write(OpCode::Negate, 123);
 
 
