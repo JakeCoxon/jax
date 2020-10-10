@@ -1,10 +1,7 @@
 #include <vector>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
 
+#define DEBUG_TRACE_EXECUTION
 
 enum class OpCode: uint8_t {
     Constant,
@@ -31,13 +28,63 @@ struct Chunk {
     }
 };
 
+enum class InterpretResult {
+    Ok,
+    CompileError,
+    RuntimeError,
+};
+
+static void printValue(Value value) {
+    printf("%g", value);
+}
+
+int disassembleInstruction(const Chunk &chunk, int offset);
+
+struct VM {
+    Chunk *chunk;
+    unsigned long ip;
+
+    InterpretResult interpret(Chunk *chunk);
+    InterpretResult run();
+};
+
+InterpretResult VM::interpret(Chunk *chunk) {
+    this->chunk = chunk;
+    ip = 0;
+    return run();
+}
+
+InterpretResult VM::run() {
+    auto readByte = [&]() -> uint8_t {
+        return chunk->code[ip++];
+    };
+    auto readConstant = [&]() -> Value { 
+        return chunk->constants[readByte()];
+    };
+
+    while (true) {
+#ifdef DEBUG_TRACE_EXECUTION
+        disassembleInstruction(*chunk, ip);
+#endif
+
+        auto instruction = OpCode(readByte());
+        switch (instruction) {
+            case OpCode::Return: {
+                return InterpretResult::Ok;
+            }
+            case OpCode::Constant: {
+                Value constant = readConstant();
+                printValue(constant);
+                printf("\n");
+                break;
+            }
+        }
+    }
+}
+
 static int simpleInstruction(const char* name, int offset) {
     printf("%s\n", name);
     return offset + 1;
-}
-
-static void printValue(Value value) {
-  printf("%g", value);
 }
 
 static int constantInstruction(const char* name, const Chunk &chunk, int offset) {
@@ -81,6 +128,7 @@ void disassembleChunk(const Chunk &chunk, const char* name) {
 
 
 int main(int argc, const char* argv[]) {
+    VM vm;
     Chunk chunk;
 
     int constant = chunk.addConstant(1.2);
@@ -90,6 +138,8 @@ int main(int argc, const char* argv[]) {
 
     chunk.write(OpCode::Return, 123);
     disassembleChunk(chunk, "test chunk");
+
+    vm.interpret(&chunk);
 
     return 0;
 }
