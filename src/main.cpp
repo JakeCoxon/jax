@@ -2,7 +2,9 @@
 #include <fstream>
 #include <iostream>
 
+#include "scanner.cpp"
 #include "vm.cpp"
+#include "compiler.cpp"
 
 std::string readFile(const std::string &path) {
     // http://insanecoding.blogspot.com/2011/11/how-to-read-in-file-in-c.html

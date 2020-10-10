@@ -1,8 +1,6 @@
 #include <vector>
 #include <string>
 
-#include "compiler.cpp"
-
 #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 
@@ -43,6 +41,7 @@ enum class InterpretResult {
 };
 
 int disassembleInstruction(const Chunk &chunk, int offset);
+bool compile(const std::string &source, Chunk &chunk); // compiler.cpp
 
 struct VM {
     Chunk *chunk;
@@ -64,13 +63,16 @@ struct VM {
 };
 
 InterpretResult VM::interpret(const std::string &source) {
+    Chunk chunk;
+    if (!compile(source, chunk)) {
+        return InterpretResult::CompileError;
+    }
 
-    // this->chunk = &chunk;
-    ip = 0;
+    this->chunk = &chunk;
+    this->ip = 0;
 
-    compile(source);
-
-    return InterpretResult::CompileError;
+    InterpretResult result = run();
+    return result;
 }
 
 InterpretResult VM::run() {
