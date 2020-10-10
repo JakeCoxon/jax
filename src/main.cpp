@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #define DEBUG_TRACE_EXECUTION
+#define STACK_MAX 256
 
 enum class OpCode: uint8_t {
     Constant,
@@ -44,8 +45,18 @@ struct VM {
     Chunk *chunk;
     unsigned long ip;
 
+    std::vector<Value> stack;
+
     InterpretResult interpret(Chunk *chunk);
     InterpretResult run();
+
+    void resetStack() { stack.clear(); };
+    void push(Value value) { stack.push_back(value); }
+    Value pop() {
+        auto value = stack.back();
+        stack.pop_back();
+        return value;
+    }
 };
 
 InterpretResult VM::interpret(Chunk *chunk) {
@@ -64,19 +75,27 @@ InterpretResult VM::run() {
 
     while (true) {
 #ifdef DEBUG_TRACE_EXECUTION
+        printf("          ");
+        for (auto value: stack) {
+            printf("[ ");
+            printValue(value);
+            printf(" ]");
+        }
+        printf("\n");
         disassembleInstruction(*chunk, ip);
 #endif
 
         auto instruction = OpCode(readByte());
         switch (instruction) {
-            case OpCode::Return: {
-                return InterpretResult::Ok;
-            }
             case OpCode::Constant: {
                 Value constant = readConstant();
-                printValue(constant);
-                printf("\n");
+                push(constant);
                 break;
+            }
+            case OpCode::Return: {
+                printValue(pop());
+                printf("\n");
+                return InterpretResult::Ok;
             }
         }
     }
