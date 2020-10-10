@@ -1,6 +1,8 @@
 #include <vector>
 #include <string>
 
+#include "compiler.cpp"
+
 #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 
@@ -65,6 +67,8 @@ InterpretResult VM::interpret(const std::string &source) {
 
     // this->chunk = &chunk;
     ip = 0;
+
+    compile(source);
 
     return InterpretResult::CompileError;
 }
