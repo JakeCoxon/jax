@@ -43,9 +43,12 @@ struct Scanner {
     Token scanToken();
     void skipWhitespace();
     bool match(char expected);
+    TokenType identifierType();
+    TokenType checkKeyword(size_t offset, size_t length, const std::string &rest, TokenType type);
 
     Token string();
     Token number();
+    Token identifier();
 
     char peek() { return source[current]; }
     bool isAtEnd() { return current == source.size(); }
@@ -126,6 +129,12 @@ static bool isDigit(char c) {
     return c >= '0' && c <= '9';
 }
 
+static bool isAlpha(char c) {
+    return (c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c == '_');
+}
+
 Token Scanner::scanToken() {
     skipWhitespace();
 
@@ -135,6 +144,8 @@ Token Scanner::scanToken() {
     if (isAtEnd()) return makeToken(TokenType::EOF_);
 
     char c = advance();
+
+    if (isAlpha(c)) return identifier();
     if (isDigit(c)) return number();
 
     switch (c) {
@@ -167,6 +178,31 @@ Token Scanner::scanToken() {
     return errorToken("Unexpected character.");
 }
 
+TokenType Scanner::identifierType() {
+    switch (source[start]) {
+        case 'a': return checkKeyword(1, 2, "nd", TokenType::And);
+        case 'c': return checkKeyword(1, 4, "lass", TokenType::Class);
+        case 'e': return checkKeyword(1, 3, "lse", TokenType::Else);
+        case 'i': return checkKeyword(1, 1, "f", TokenType::If);
+        case 'n': return checkKeyword(1, 2, "il", TokenType::Nil);
+        case 'o': return checkKeyword(1, 1, "r", TokenType::Or);
+        case 'p': return checkKeyword(1, 4, "rint", TokenType::Print);
+        case 'r': return checkKeyword(1, 5, "eturn", TokenType::Return);
+        case 's': return checkKeyword(1, 4, "uper", TokenType::Super);
+        case 'v': return checkKeyword(1, 2, "ar", TokenType::Var);
+        case 'w': return checkKeyword(1, 4, "hile", TokenType::While);
+    }
+    return TokenType::Identifier;
+}
+
+TokenType Scanner::checkKeyword(size_t offset, size_t length, const std::string &rest, TokenType type) {
+    if (current == start + offset + length && 
+            source.compare(start + offset, length, rest) == 0) {
+        return type;
+    }
+    return TokenType::Identifier;
+}
+
 Token Scanner::string() {
     while (peek() != '"' && !isAtEnd()) {
         if (peek() == '\n') { 
@@ -189,4 +225,9 @@ Token Scanner::number() {
         while (isDigit(peek())) advance();
     }
     return makeToken(TokenType::Number);
+}
+
+Token Scanner::identifier() {
+    while (isAlpha(peek()) || isDigit(peek())) advance();
+    return makeToken(identifierType());
 }
