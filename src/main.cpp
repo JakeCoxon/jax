@@ -16,12 +16,14 @@ typedef double Value;
 struct Chunk {
     std::vector<uint8_t> code;
     std::vector<Value> constants;
+    std::vector<int> lines;
 
-    void write(uint8_t byte) {
+    void write(uint8_t byte, int line) {
         code.push_back(byte);
+        lines.push_back(line);
     }
-    void write(OpCode opcode) { 
-        write(static_cast<uint8_t>(opcode));
+    void write(OpCode opcode, int line) { 
+        write(static_cast<uint8_t>(opcode), line);
     }
     long addConstant(Value value) {
         constants.push_back(value);
@@ -50,6 +52,12 @@ static int constantInstruction(const char* name, const Chunk &chunk, int offset)
 int disassembleInstruction(const Chunk &chunk, int offset) {
     printf("%04d ", offset);
 
+    if (offset > 0 && chunk.lines[offset] == chunk.lines[offset - 1]) {
+        printf("   | ");
+    } else {
+        printf("%4d ", chunk.lines[offset]);
+    }
+
     auto instruction = OpCode(chunk.code[offset]);
     switch (instruction) {
         case OpCode::Constant:
@@ -76,11 +84,11 @@ int main(int argc, const char* argv[]) {
     Chunk chunk;
 
     int constant = chunk.addConstant(1.2);
-    chunk.write(OpCode::Constant);
-    chunk.write(constant);
+    chunk.write(OpCode::Constant, 123);
+    chunk.write(constant, 123);
 
 
-    chunk.write(OpCode::Return);
+    chunk.write(OpCode::Return, 123);
     disassembleChunk(chunk, "test chunk");
 
     return 0;
