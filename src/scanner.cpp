@@ -72,27 +72,6 @@ struct Scanner {
     }
 };
 
-
-void compile(const std::string &source) {
-    Scanner scanner { source };
-    int line = -1;
-    while (true) {
-        Token token = scanner.scanToken();
-        if (token.line != line) {
-            printf("%4d ", token.line);
-            line = token.line;
-        } else {
-            printf("   | ");
-        }
-        printf("%2d ", token.indexInLine);
-        printf("%2d ", token.type);
-        std::cout << "'" << token.text << "'" << std::endl;
-
-        if (token.type == TokenType::EOF_) break;
-    }
-
-}
-
 bool Scanner::match(char expected) {
     if (isAtEnd()) return false;
     if (source[current] != expected) return false;
