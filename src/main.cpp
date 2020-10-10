@@ -6,6 +6,7 @@
 
 enum class OpCode: uint8_t {
     Constant,
+    Negate,
     Return,
 };
 
@@ -92,6 +93,7 @@ InterpretResult VM::run() {
                 push(constant);
                 break;
             }
+            case OpCode::Negate: push(-pop()); break;
             case OpCode::Return: {
                 printValue(pop());
                 printf("\n");
@@ -128,6 +130,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
     switch (instruction) {
         case OpCode::Constant:
             return constantInstruction("Constant", chunk, offset);
+        case OpCode::Negate:
+            return simpleInstruction("Negate", offset);
         case OpCode::Return:
             return simpleInstruction("Return", offset);
         default:
@@ -153,6 +157,7 @@ int main(int argc, const char* argv[]) {
     int constant = chunk.addConstant(1.2);
     chunk.write(OpCode::Constant, 123);
     chunk.write(constant, 123);
+    chunk.write(OpCode::Negate, 123);
 
 
     chunk.write(OpCode::Return, 123);
