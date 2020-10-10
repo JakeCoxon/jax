@@ -29,7 +29,7 @@ struct Token {
     TokenType type;
     std::string_view text;
     int line;
-    int indexInLine;
+    size_t start;
 };
 
 struct Scanner {
@@ -37,7 +37,6 @@ struct Scanner {
     size_t start = 0;
     size_t current = 0;
     size_t lineStart = 0;
-    int indexInLine = 0;
     int line = 1;
 
     Token scanToken();
@@ -64,11 +63,11 @@ struct Scanner {
 
     Token makeToken(TokenType type) {
         auto text = std::string_view(&source[start], current - start);
-        return Token { type, text, line, indexInLine };
+        return Token { type, text, line, start };
     }
 
     Token errorToken(const std::string& message) {
-        return Token { TokenType::Error, message, line, indexInLine };
+        return Token { TokenType::Error, message, line, start };
     }
 };
 
@@ -118,7 +117,6 @@ Token Scanner::scanToken() {
     skipWhitespace();
 
     start = current;
-    indexInLine = (int) (start - lineStart);
 
     if (isAtEnd()) return makeToken(TokenType::EOF_);
 
