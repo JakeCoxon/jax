@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 
+#define DEBUG_PRINT_CODE
 #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 
