@@ -232,10 +232,16 @@ void Parser::binary() {
     parsePrecedence(Precedence(prec + 1)); // +1 because of left associativity
 
     switch (operatorType) {
-        case TokenType::Plus:  emitByte(OpCode::Add); break;
-        case TokenType::Minus: emitByte(OpCode::Subtract); break;
-        case TokenType::Star:  emitByte(OpCode::Multiply); break;
-        case TokenType::Slash: emitByte(OpCode::Divide); break;
+        case TokenType::BangEqual:     emitByte(OpCode::Equal); emitByte(OpCode::Not); break;
+        case TokenType::EqualEqual:    emitByte(OpCode::Equal); break;
+        case TokenType::Greater:       emitByte(OpCode::Greater); break;
+        case TokenType::GreaterEqual:  emitByte(OpCode::Less); emitByte(OpCode::Not); break;
+        case TokenType::Less:          emitByte(OpCode::Less); break;
+        case TokenType::LessEqual:     emitByte(OpCode::Greater); emitByte(OpCode::Not); break;
+        case TokenType::Plus:          emitByte(OpCode::Add); break;
+        case TokenType::Minus:         emitByte(OpCode::Subtract); break;
+        case TokenType::Star:          emitByte(OpCode::Multiply); break;
+        case TokenType::Slash:         emitByte(OpCode::Divide); break;
         default: return;
     }
 }
@@ -250,46 +256,46 @@ void Parser::literal() {
 }
 
 ParseRule rules[] = {
-    {&Parser::grouping, nullptr,           Precedence::None},     // LeftParen
-    {nullptr,           nullptr,           Precedence::None},     // RightParen
-    {nullptr,           nullptr,           Precedence::None},     // LeftBrace
-    {nullptr,           nullptr,           Precedence::None},     // RightBrace
-    {nullptr,           nullptr,           Precedence::None},     // Comma
-    {nullptr,           nullptr,           Precedence::None},     // Dot
-    {&Parser::unary,    &Parser::binary,   Precedence::Term},     // Minus
-    {nullptr,           &Parser::binary,   Precedence::Term},     // Plus
-    {nullptr,           nullptr,           Precedence::None},     // Semicolon
-    {nullptr,           &Parser::binary,   Precedence::Factor},   // Slash
-    {nullptr,           &Parser::binary,   Precedence::Factor},   // Star
-    {&Parser::unary,    nullptr,           Precedence::None},     // Bang
-    {nullptr,           nullptr,           Precedence::None},     // BangEqual
-    {nullptr,           nullptr,           Precedence::None},     // Equal
-    {nullptr,           nullptr,           Precedence::None},     // EqualEqual
-    {nullptr,           nullptr,           Precedence::None},     // Greater
-    {nullptr,           nullptr,           Precedence::None},     // GreaterEqual
-    {nullptr,           nullptr,           Precedence::None},     // Less
-    {nullptr,           nullptr,           Precedence::None},     // LessEqual
-    {nullptr,           nullptr,           Precedence::None},     // Identifier
-    {nullptr,           nullptr,           Precedence::None},     // String
-    {&Parser::number,   nullptr,           Precedence::None},     // Number
-    {nullptr,           nullptr,           Precedence::None},     // And
-    {nullptr,           nullptr,           Precedence::None},     // Class
-    {nullptr,           nullptr,           Precedence::None},     // Else
-    {&Parser::literal,  nullptr,           Precedence::None},     // False
-    {nullptr,           nullptr,           Precedence::None},     // For
-    {nullptr,           nullptr,           Precedence::None},     // Fun
-    {nullptr,           nullptr,           Precedence::None},     // If
-    {&Parser::literal,  nullptr,           Precedence::None},     // Nil
-    {nullptr,           nullptr,           Precedence::None},     // Or
-    {nullptr,           nullptr,           Precedence::None},     // Print
-    {nullptr,           nullptr,           Precedence::None},     // Return
-    {nullptr,           nullptr,           Precedence::None},     // Super
-    {nullptr,           nullptr,           Precedence::None},     // This
-    {&Parser::literal,  nullptr,           Precedence::None},     // True
-    {nullptr,           nullptr,           Precedence::None},     // Var
-    {nullptr,           nullptr,           Precedence::None},     // While
-    {nullptr,           nullptr,           Precedence::None},     // Error
-    {nullptr,           nullptr,           Precedence::None},     // Eof
+    {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
+    {nullptr,           nullptr,           Precedence::None},       // RightParen
+    {nullptr,           nullptr,           Precedence::None},       // LeftBrace
+    {nullptr,           nullptr,           Precedence::None},       // RightBrace
+    {nullptr,           nullptr,           Precedence::None},       // Comma
+    {nullptr,           nullptr,           Precedence::None},       // Dot
+    {&Parser::unary,    &Parser::binary,   Precedence::Term},       // Minus
+    {nullptr,           &Parser::binary,   Precedence::Term},       // Plus
+    {nullptr,           nullptr,           Precedence::None},       // Semicolon
+    {nullptr,           &Parser::binary,   Precedence::Factor},     // Slash
+    {nullptr,           &Parser::binary,   Precedence::Factor},     // Star
+    {&Parser::unary,    nullptr,           Precedence::None},       // Bang
+    {nullptr,           &Parser::binary,   Precedence::Equality},   // BangEqual
+    {nullptr,           nullptr,           Precedence::None},       // Equal
+    {nullptr,           &Parser::binary,   Precedence::Equality},   // EqualEqual
+    {nullptr,           &Parser::binary,   Precedence::Comparison}, // Greater
+    {nullptr,           &Parser::binary,   Precedence::Comparison}, // GreaterEqual
+    {nullptr,           &Parser::binary,   Precedence::Comparison}, // Less
+    {nullptr,           &Parser::binary,   Precedence::Comparison}, // LessEqual
+    {nullptr,           nullptr,           Precedence::None},       // Identifier
+    {nullptr,           nullptr,           Precedence::None},       // String
+    {&Parser::number,   nullptr,           Precedence::None},       // Number
+    {nullptr,           nullptr,           Precedence::None},       // And
+    {nullptr,           nullptr,           Precedence::None},       // Class
+    {nullptr,           nullptr,           Precedence::None},       // Else
+    {&Parser::literal,  nullptr,           Precedence::None},       // False
+    {nullptr,           nullptr,           Precedence::None},       // For
+    {nullptr,           nullptr,           Precedence::None},       // Fun
+    {nullptr,           nullptr,           Precedence::None},       // If
+    {&Parser::literal,  nullptr,           Precedence::None},       // Nil
+    {nullptr,           nullptr,           Precedence::None},       // Or
+    {nullptr,           nullptr,           Precedence::None},       // Print
+    {nullptr,           nullptr,           Precedence::None},       // Return
+    {nullptr,           nullptr,           Precedence::None},       // Super
+    {nullptr,           nullptr,           Precedence::None},       // This
+    {&Parser::literal,  nullptr,           Precedence::None},       // True
+    {nullptr,           nullptr,           Precedence::None},       // Var
+    {nullptr,           nullptr,           Precedence::None},       // While
+    {nullptr,           nullptr,           Precedence::None},       // Error
+    {nullptr,           nullptr,           Precedence::None},       // Eof
 };
 
 static ParseRule &getRule(TokenType type) {

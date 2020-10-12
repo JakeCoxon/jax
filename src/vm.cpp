@@ -10,6 +10,9 @@ enum class OpCode: uint8_t {
     Nil,
     True,
     False,
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
@@ -121,6 +124,9 @@ InterpretResult VM::run() {
             case OpCode::Nil: push(Value::Nil()); break;
             case OpCode::True: push(true); break;
             case OpCode::False: push(false); break;
+            case OpCode::Equal:
+            case OpCode::Greater:
+            case OpCode::Less:
             case OpCode::Add:
             case OpCode::Subtract:
             case OpCode::Multiply:
@@ -143,21 +149,71 @@ InterpretResult VM::run() {
     }
 }
 
-void VM::binaryOperation(OpCode instruction) {
-    if (!peek(0).isNumber() || !peek(1).isNumber()) {
-        runtimeError() << "Operands must be numbers." << std::endl;
-        return;
-    }
-    double b = pop().asNumber();
-    double a = pop().asNumber();
 
-    switch (instruction) {
-        case OpCode::Add:       { push(a + b); break; }
-        case OpCode::Subtract:  { push(a - b); break; }
-        case OpCode::Multiply:  { push(a * b); break; }
-        case OpCode::Divide:    { push(a / b); break; }
-        default: return;
+class OpEqual {};
+class OpGreater {};
+class OpLess {};
+class OpAdd {};
+class OpSubtract {};
+class OpMultiply {};
+class OpDivide {};
+
+using BinaryOperation = mpark::variant<
+    OpEqual, OpGreater, OpLess, OpAdd, OpSubtract, OpMultiply, OpDivide
+>;
+
+template <class Variant, std::size_t I = 0>
+Variant variant_from_index(std::size_t index) {
+    if constexpr(I >= mpark::variant_size_v<Variant>)
+        throw std::runtime_error{"Variant index " + std::to_string(I + index) + " out of bounds"};
+    else
+        return index == 0
+            ? Variant{mpark::in_place_index<I>}
+            : variant_from_index<Variant, I + 1>(index - 1);
+}
+
+struct BinaryOperatorVisitor {
+    VM &vm;
+
+    // Arithmetic
+    Value operator()(double a, double b, OpGreater _) {    return a > b; }
+    Value operator()(double a, double b, OpLess _) {       return a < b; }
+    Value operator()(double a, double b, OpSubtract _) {   return a - b; }
+    Value operator()(double a, double b, OpMultiply _) {   return a * b; }
+    Value operator()(double a, double b, OpDivide _) {     return a / b; }
+
+    // Add
+    Value operator()(double a, double b, OpAdd _) { return a + b; }
+    
+    // Equal
+    template<class T>
+    Value operator()(T a, T b, OpEqual _) { return a == b; }
+
+    template<class T, class U>
+    Value operator()(T a, U b, OpEqual _) { return false; }
+
+    // Default case 
+    template<class T, class U, class V>
+    Value operator()(T a, U b, V _) {
+        vm.runtimeError() << "Invalid operands for operator." << std::endl;
+        return Value::Nil();
     }
+};
+
+
+void VM::binaryOperation(OpCode instruction) {
+
+    Value b = peek(0);
+    Value a = peek(1);
+    auto binaryOpIndex = variant_from_index<BinaryOperation>(
+        static_cast<size_t>(instruction) - static_cast<size_t>(OpCode::Equal)
+    );
+
+    Value result = rollbear::visit(BinaryOperatorVisitor{*this}, a.variant, b.variant, binaryOpIndex);
+    if (stack.empty()) return;
+
+    pop(); pop(); push(result);
+
 }
 
 void VM::unaryOperation(OpCode instruction) {
@@ -210,6 +266,12 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("True", offset);
         case OpCode::False:
             return simpleInstruction("False", offset);
+        case OpCode::Equal:
+            return simpleInstruction("Equal", offset);
+        case OpCode::Less:
+            return simpleInstruction("Less", offset);
+        case OpCode::Greater:
+            return simpleInstruction("Greater", offset);
         case OpCode::Add:
             return simpleInstruction("Add", offset);
         case OpCode::Subtract:

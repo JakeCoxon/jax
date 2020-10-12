@@ -23,6 +23,7 @@ struct Value {
 
     inline std::string toString() const;
     inline bool isFalsey() const;
+    bool operator==(Value &rhs) const;
 
     static Value& Nil() {
         static Value instance;
@@ -60,4 +61,13 @@ struct IsFalseyVisitor {
 
 bool Value::isFalsey() const {
     return visit(IsFalseyVisitor());
+}
+
+struct IsEqualVisitor {
+    template<class T> bool operator()(const T a, const T b) const { return a == b; }
+    template<class T, class U> bool operator()(const T a, const U b) const { return false; }
+};
+
+bool Value::operator==(Value &rhs) const {
+    return rollbear::visit(IsEqualVisitor{}, variant, rhs.variant);
 }
