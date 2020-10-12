@@ -1,5 +1,6 @@
 #include <vector>
 #include <string>
+#include <unordered_map>
 
 #define DEBUG_PRINT_CODE
 #define DEBUG_TRACE_EXECUTION
@@ -11,6 +12,7 @@ enum class OpCode: uint8_t {
     True,
     False,
     Pop,
+    DefineGlobal,
     Equal,
     Greater,
     Less,
@@ -56,6 +58,7 @@ struct VM {
     unsigned long ip;
 
     std::vector<Value> stack;
+    std::unordered_map<std::string, Value> globals;
 
     InterpretResult interpret(const std::string &string);
     InterpretResult run();
@@ -104,6 +107,9 @@ InterpretResult VM::run() {
     auto readConstant = [&]() -> Value { 
         return chunk->constants[readByte()];
     };
+    auto readString = [&]() -> ObjString& { 
+        return readConstant().asString();
+    };
 
     while (true) {
 #ifdef DEBUG_TRACE_EXECUTION
@@ -128,6 +134,12 @@ InterpretResult VM::run() {
             case OpCode::True: push(true); break;
             case OpCode::False: push(false); break;
             case OpCode::Pop: pop(); break;
+            case OpCode::DefineGlobal: {
+                auto name = readString();
+                globals[name.text] = peek(0);
+                pop();
+                break;
+            }
             case OpCode::Equal:
             case OpCode::Greater:
             case OpCode::Less:
@@ -287,6 +299,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("False", offset);
         case OpCode::Pop:
             return simpleInstruction("Pop", offset);
+        case OpCode::DefineGlobal:
+            return simpleInstruction("DefineGlobal", offset);
         case OpCode::Equal:
             return simpleInstruction("Equal", offset);
         case OpCode::Less:

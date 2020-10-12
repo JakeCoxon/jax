@@ -34,6 +34,9 @@ struct Parser {
     void errorAt(Token &token, const std::string &message);
     uint8_t makeConstant(Value value);
     void parsePrecedence(Precedence precedence);
+    uint8_t parseVariable(const std::string &errorMessage);
+    void defineVariable(uint8_t global);
+    uint8_t identifierConstant(Token *name);
     void synchronize();
     void endCompiler();
 
@@ -44,6 +47,7 @@ struct Parser {
     void statement();
     void printStatement();
     void expressionStatement();
+    void varDeclaration();
     void expression();
     void number();
     void grouping();
@@ -51,6 +55,7 @@ struct Parser {
     void binary();
     void literal();
     void string();
+    void variable();
 
     Chunk &currentChunk() { return *chunk; }
     void emitByte(uint8_t byte) {
@@ -197,8 +202,8 @@ void Parser::synchronize() {
             case TokenType::Return:
                 return;
             default: break;
-            
         }
+        advance();
     }
 }
 
@@ -237,8 +242,28 @@ void Parser::parsePrecedence(Precedence precedence) {
     }
 }
 
+
+uint8_t Parser::parseVariable(const std::string &errorMessage) {
+    consume(TokenType::Identifier, errorMessage);
+    return identifierConstant(&previous);
+}
+
+void Parser::defineVariable(uint8_t global) {
+    emitByte(OpCode::DefineGlobal); emitByte(global);
+}
+
+uint8_t Parser::identifierConstant(Token *name) {
+    // TODO: Garbage collection
+    auto objStr = new ObjString { {}, std::string(name->text) };
+    return makeConstant(objStr);
+}
+
 void Parser::declaration() {
-    statement();
+    if (match(TokenType::Var)) {
+        varDeclaration();
+    } else {
+        statement();
+    }
 
     if (panicMode) synchronize();
 }
@@ -261,6 +286,18 @@ void Parser::expressionStatement() {
     expression();
     consume(TokenType::Semicolon, "Expect ';' after expression.");
     emitByte(OpCode::Pop);
+}
+
+void Parser::varDeclaration() {
+    uint8_t global = parseVariable("Expect variable name.");
+
+    if (match(TokenType::Equal)) {
+        expression();
+    } else {
+        emitByte(OpCode::Nil);
+    }
+    consume(TokenType::Semicolon, "Expect ';' after variable declaration.");
+    defineVariable(global);
 }
 
 void Parser::expression() {
@@ -331,6 +368,7 @@ void Parser::string() {
     auto objStr = new ObjString { {}, std::string(str) };
     emitConstant(objStr);
 }
+
 
 ParseRule rules[] = {
     {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
