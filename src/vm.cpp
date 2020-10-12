@@ -10,6 +10,7 @@ enum class OpCode: uint8_t {
     Nil,
     True,
     False,
+    Pop,
     Equal,
     Greater,
     Less,
@@ -19,6 +20,7 @@ enum class OpCode: uint8_t {
     Divide,
     Not,
     Negate,
+    Print,
     Return,
 };
 
@@ -125,6 +127,7 @@ InterpretResult VM::run() {
             case OpCode::Nil: push(Value::Nil()); break;
             case OpCode::True: push(true); break;
             case OpCode::False: push(false); break;
+            case OpCode::Pop: pop(); break;
             case OpCode::Equal:
             case OpCode::Greater:
             case OpCode::Less:
@@ -137,12 +140,16 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::Not:
-            case OpCode::Negate:
+            case OpCode::Negate: {
                 unaryOperation(instruction);
                 if (stack.empty()) return InterpretResult::RuntimeError;
                 break;
+            }
+            case OpCode::Print: {
+                std::cout << pop() << std::endl;
+                break;
+            }
             case OpCode::Return: {
-                std::cout << pop();
                 std::cout << std::endl;
                 return InterpretResult::Ok;
             }
@@ -278,6 +285,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("True", offset);
         case OpCode::False:
             return simpleInstruction("False", offset);
+        case OpCode::Pop:
+            return simpleInstruction("Pop", offset);
         case OpCode::Equal:
             return simpleInstruction("Equal", offset);
         case OpCode::Less:
@@ -296,6 +305,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("Not", offset);
         case OpCode::Negate:
             return simpleInstruction("Negate", offset);
+        case OpCode::Print:
+            return simpleInstruction("Print", offset);
         case OpCode::Return:
             return simpleInstruction("Return", offset);
     }

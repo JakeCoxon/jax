@@ -28,15 +28,22 @@ struct Parser {
         scanner(scanner), chunk(chunk) {};
 
     void advance();
+    bool match(TokenType type);
+    bool check(TokenType type);
     void consume(TokenType type, const std::string &messsage);
     void errorAt(Token &token, const std::string &message);
     uint8_t makeConstant(Value value);
     void parsePrecedence(Precedence precedence);
+    void synchronize();
     void endCompiler();
 
     void emitReturn();
     void emitConstant(Value value);
 
+    void declaration();
+    void statement();
+    void printStatement();
+    void expressionStatement();
     void expression();
     void number();
     void grouping();
@@ -75,8 +82,10 @@ bool compile(const std::string &source, Chunk &chunk) {
     Scanner scanner { source };
     Parser parser { scanner, &chunk };
     parser.advance();
-    parser.expression();
-    parser.consume(TokenType::EOF_, "Expect end of expression.");
+
+    while (!parser.match(TokenType::EOF_)) {
+        parser.declaration();
+    }
 
     parser.endCompiler();
 
@@ -109,6 +118,16 @@ void Parser::advance() {
         }
         break;
     }
+}
+
+
+bool Parser::match(TokenType type) {
+    if (!check(type)) return false;
+    advance();
+    return true;
+}
+bool Parser::check(TokenType type) {
+    return current.type == type;
 }
 
 void Parser::consume(TokenType type, const std::string &message) {
@@ -161,6 +180,28 @@ uint8_t Parser::makeConstant(Value value) {
     return (uint8_t)constant;
 }
 
+void Parser::synchronize() {
+    panicMode = false;
+
+    while (current.type != TokenType::EOF_) {
+        if  (previous.type == TokenType::Semicolon) return;
+
+        switch (current.type) {
+            case TokenType::Class:
+            case TokenType::Fun:
+            case TokenType::Var:
+            case TokenType::For:
+            case TokenType::If:
+            case TokenType::While:
+            case TokenType::Print:
+            case TokenType::Return:
+                return;
+            default: break;
+            
+        }
+    }
+}
+
 void Parser::endCompiler() {
     emitReturn();
 #ifdef DEBUG_PRINT_CODE
@@ -194,6 +235,32 @@ void Parser::parsePrecedence(Precedence precedence) {
         ParseFn infixRule = getRule(previous.type).infix;
         (this->*infixRule)();
     }
+}
+
+void Parser::declaration() {
+    statement();
+
+    if (panicMode) synchronize();
+}
+
+void Parser::statement() {
+    if (match(TokenType::Print)) {
+        printStatement();
+    } else {
+        expressionStatement();
+    }
+}
+
+void Parser::printStatement() {
+    expression();
+    consume(TokenType::Semicolon, "Expect ';' after value.");
+    emitByte(OpCode::Print);
+}
+
+void Parser::expressionStatement() {
+    expression();
+    consume(TokenType::Semicolon, "Expect ';' after expression.");
+    emitByte(OpCode::Pop);
 }
 
 void Parser::expression() {
