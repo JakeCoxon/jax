@@ -1,1 +1,2 @@
 var apple = 2;
+print apple + 3;

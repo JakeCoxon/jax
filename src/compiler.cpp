@@ -56,6 +56,7 @@ struct Parser {
     void literal();
     void string();
     void variable();
+    void namedVariable(Token name);
 
     Chunk &currentChunk() { return *chunk; }
     void emitByte(uint8_t byte) {
@@ -369,6 +370,14 @@ void Parser::string() {
     emitConstant(objStr);
 }
 
+void Parser::variable() {
+    namedVariable(previous);
+}
+
+void Parser::namedVariable(Token name) {
+    uint8_t arg = identifierConstant(&name);
+    emitByte(OpCode::GetGlobal); emitByte(arg);
+}
 
 ParseRule rules[] = {
     {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
@@ -390,7 +399,7 @@ ParseRule rules[] = {
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // GreaterEqual
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // Less
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // LessEqual
-    {nullptr,           nullptr,           Precedence::None},       // Identifier
+    {&Parser::variable, nullptr,           Precedence::None},       // Identifier
     {&Parser::string,   nullptr,           Precedence::None},       // String
     {&Parser::number,   nullptr,           Precedence::None},       // Number
     {nullptr,           nullptr,           Precedence::None},       // And
