@@ -18,10 +18,11 @@ struct Value {
     double asNumber() { return mpark::get<double>(variant); }
     bool asBool() { return mpark::get<bool>(variant); }
 
-    template<class T> auto visit(T visitor) { return rollbear::visit(visitor, variant); }
-    template<class T> auto visit(T visitor) const { return rollbear::visit(visitor, variant); }
+    template<class T> inline auto visit(T visitor) { return rollbear::visit(visitor, variant); }
+    template<class T> inline auto visit(T visitor) const { return rollbear::visit(visitor, variant); }
 
     inline std::string toString() const;
+    inline bool isFalsey() const;
 
     static Value& Nil() {
         static Value instance;
@@ -49,4 +50,14 @@ struct ToStringVisitor {
 
 std::string Value::toString() const {
     return visit(ToStringVisitor());
+}
+
+struct IsFalseyVisitor {
+    bool operator()(const mpark::monostate n) const { return true; }
+    bool operator()(const double d) const { return false; }
+    bool operator()(const bool b) const { return !b; }
+};
+
+bool Value::isFalsey() const {
+    return visit(IsFalseyVisitor());
 }

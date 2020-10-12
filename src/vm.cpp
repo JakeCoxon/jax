@@ -14,6 +14,7 @@ enum class OpCode: uint8_t {
     Subtract,
     Multiply,
     Divide,
+    Not,
     Negate,
     Return,
 };
@@ -128,6 +129,7 @@ InterpretResult VM::run() {
                 if (stack.empty()) return InterpretResult::RuntimeError;
                 break;
             }
+            case OpCode::Not:
             case OpCode::Negate:
                 unaryOperation(instruction);
                 if (stack.empty()) return InterpretResult::RuntimeError;
@@ -160,6 +162,9 @@ void VM::binaryOperation(OpCode instruction) {
 
 void VM::unaryOperation(OpCode instruction) {
     switch (instruction) {
+        case OpCode::Not:
+            push(pop().isFalsey());
+            break;
         case OpCode::Negate: {
             if (!peek(0).isNumber()) {
                 runtimeError() << "Operand must be a number." << std::endl;
@@ -213,13 +218,12 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("Multiply", offset);
         case OpCode::Divide:
             return simpleInstruction("Divide", offset);
+        case OpCode::Not:
+            return simpleInstruction("Not", offset);
         case OpCode::Negate:
             return simpleInstruction("Negate", offset);
         case OpCode::Return:
             return simpleInstruction("Return", offset);
-        default:
-            printf("Unknown opcode %hhu\n", instruction);
-            return offset + 1;
     }
 }
 

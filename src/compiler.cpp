@@ -217,6 +217,7 @@ void Parser::unary() {
     expression();
 
     switch (operatorType) {
+        case TokenType::Bang:  emitByte(OpCode::Not); break;
         case TokenType::Minus: emitByte(OpCode::Negate); break;
         default:
             return;
@@ -260,7 +261,7 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},     // Semicolon
     {nullptr,           &Parser::binary,   Precedence::Factor},   // Slash
     {nullptr,           &Parser::binary,   Precedence::Factor},   // Star
-    {nullptr,           nullptr,           Precedence::None},     // Bang
+    {&Parser::unary,    nullptr,           Precedence::None},     // Bang
     {nullptr,           nullptr,           Precedence::None},     // BangEqual
     {nullptr,           nullptr,           Precedence::None},     // Equal
     {nullptr,           nullptr,           Precedence::None},     // EqualEqual
