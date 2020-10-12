@@ -15,8 +15,6 @@ enum class OpCode: uint8_t {
     Return,
 };
 
-typedef double Value;
-
 struct Chunk {
     std::vector<uint8_t> code;
     std::vector<Value> constants;
@@ -110,7 +108,7 @@ InterpretResult VM::run() {
                 binaryOperation(instruction);
                 break;
             }
-            case OpCode::Negate: push(-pop()); break;
+            case OpCode::Negate: push(-pop().asNumber()); break;
             case OpCode::Return: {
                 std::cout << pop();
                 std::cout << std::endl;
@@ -121,8 +119,8 @@ InterpretResult VM::run() {
 }
 
 void VM::binaryOperation(OpCode instruction) {
-    double b = pop();
-    double a = pop();
+    double b = pop().asNumber();
+    double a = pop().asNumber();
 
     switch (instruction) {
         case OpCode::Add:       { push(a + b); break; }

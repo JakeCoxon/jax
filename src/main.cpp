@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "scanner.cpp"
+#include "value.cpp"
 #include "vm.cpp"
 #include "compiler.cpp"
 
