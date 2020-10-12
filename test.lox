@@ -1,2 +1,3 @@
 var apple = 2;
+apple = apple / 2;
 print apple + 3;

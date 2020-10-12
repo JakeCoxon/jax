@@ -14,6 +14,7 @@ enum class OpCode: uint8_t {
     Pop,
     DefineGlobal,
     GetGlobal,
+    SetGlobal,
     Equal,
     Greater,
     Less,
@@ -149,6 +150,16 @@ InterpretResult VM::run() {
                     return InterpretResult::RuntimeError;
                 }
                 push(found->second);
+                break;
+            }
+            case OpCode::SetGlobal: {
+                auto name = readString();
+                auto found = globals.find(name.text);
+                if (found == globals.end()) {
+                    runtimeError() << "Undefined variable '" << name.text << "'" << std::endl;
+                    return InterpretResult::RuntimeError;
+                }
+                found->second = peek(0);
                 break;
             }
             case OpCode::Equal:
@@ -314,6 +325,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("DefineGlobal", offset);
         case OpCode::GetGlobal:
             return simpleInstruction("GetGlobal", offset);
+        case OpCode::SetGlobal:
+            return simpleInstruction("SetGlobal", offset);
         case OpCode::Equal:
             return simpleInstruction("Equal", offset);
         case OpCode::Less:

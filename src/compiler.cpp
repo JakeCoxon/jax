@@ -376,7 +376,12 @@ void Parser::variable() {
 
 void Parser::namedVariable(Token name) {
     uint8_t arg = identifierConstant(&name);
-    emitByte(OpCode::GetGlobal); emitByte(arg);
+    if (match(TokenType::Equal)) {
+        expression();
+        emitByte(OpCode::SetGlobal); emitByte(arg);
+    } else {
+        emitByte(OpCode::GetGlobal); emitByte(arg);
+    }
 }
 
 ParseRule rules[] = {
