@@ -22,6 +22,11 @@ struct Value {
     template<class T> auto visit(T visitor) const { return rollbear::visit(visitor, variant); }
 
     inline std::string toString() const;
+
+    static Value& Nil() {
+        static Value instance;
+        return instance;
+    }
 };
 
 struct OutputVisitor {

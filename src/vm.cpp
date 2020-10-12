@@ -7,6 +7,9 @@
 
 enum class OpCode: uint8_t {
     Constant,
+    Nil,
+    True,
+    False,
     Add,
     Subtract,
     Multiply,
@@ -83,7 +86,7 @@ InterpretResult VM::interpret(const std::string &source) {
 std::ostream &VM::runtimeError() {
     int line = chunk->lines[ip - 1];
     resetStack();
-    std::cerr << "[line " << line << " in script]";
+    std::cerr << "[line " << line << " in script] ";
     return std::cerr;
 }
 
@@ -114,11 +117,15 @@ InterpretResult VM::run() {
                 push(constant);
                 break;
             }
+            case OpCode::Nil: push(Value::Nil()); break;
+            case OpCode::True: push(true); break;
+            case OpCode::False: push(false); break;
             case OpCode::Add:
             case OpCode::Subtract:
             case OpCode::Multiply:
             case OpCode::Divide: {
                 binaryOperation(instruction);
+                if (stack.empty()) return InterpretResult::RuntimeError;
                 break;
             }
             case OpCode::Negate:
@@ -192,6 +199,12 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
     switch (instruction) {
         case OpCode::Constant:
             return constantInstruction("Constant", chunk, offset);
+        case OpCode::Nil:
+            return simpleInstruction("Nil", offset);
+        case OpCode::True:
+            return simpleInstruction("True", offset);
+        case OpCode::False:
+            return simpleInstruction("False", offset);
         case OpCode::Add:
             return simpleInstruction("Add", offset);
         case OpCode::Subtract:

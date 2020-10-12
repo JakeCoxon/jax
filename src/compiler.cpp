@@ -42,6 +42,7 @@ struct Parser {
     void grouping();
     void unary();
     void binary();
+    void literal();
 
     Chunk &currentChunk() { return *chunk; }
     void emitByte(uint8_t byte) {
@@ -234,8 +235,16 @@ void Parser::binary() {
         case TokenType::Minus: emitByte(OpCode::Subtract); break;
         case TokenType::Star:  emitByte(OpCode::Multiply); break;
         case TokenType::Slash: emitByte(OpCode::Divide); break;
-        default:
-            return;
+        default: return;
+    }
+}
+
+void Parser::literal() {
+    switch (previous.type) {
+        case TokenType::False: emitByte(OpCode::False); break;
+        case TokenType::True: emitByte(OpCode::True); break;
+        case TokenType::Nil: emitByte(OpCode::Nil); break;
+        default: return;
     }
 }
 
@@ -265,17 +274,17 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},     // And
     {nullptr,           nullptr,           Precedence::None},     // Class
     {nullptr,           nullptr,           Precedence::None},     // Else
-    {nullptr,           nullptr,           Precedence::None},     // False
+    {&Parser::literal,  nullptr,           Precedence::None},     // False
     {nullptr,           nullptr,           Precedence::None},     // For
     {nullptr,           nullptr,           Precedence::None},     // Fun
     {nullptr,           nullptr,           Precedence::None},     // If
-    {nullptr,           nullptr,           Precedence::None},     // Nil
+    {&Parser::literal,  nullptr,           Precedence::None},     // Nil
     {nullptr,           nullptr,           Precedence::None},     // Or
     {nullptr,           nullptr,           Precedence::None},     // Print
     {nullptr,           nullptr,           Precedence::None},     // Return
     {nullptr,           nullptr,           Precedence::None},     // Super
     {nullptr,           nullptr,           Precedence::None},     // This
-    {nullptr,           nullptr,           Precedence::None},     // True
+    {&Parser::literal,  nullptr,           Precedence::None},     // True
     {nullptr,           nullptr,           Precedence::None},     // Var
     {nullptr,           nullptr,           Precedence::None},     // While
     {nullptr,           nullptr,           Precedence::None},     // Error
