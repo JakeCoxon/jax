@@ -57,6 +57,7 @@ struct VM {
 
     InterpretResult interpret(const std::string &string);
     InterpretResult run();
+    ObjString *allocateString(std::string string);
     void binaryOperation(OpCode instruction);
     void unaryOperation(OpCode instruction);
 
@@ -149,6 +150,12 @@ InterpretResult VM::run() {
     }
 }
 
+ObjString *VM::allocateString(std::string text) {
+    // TODO: Garbage collection
+    auto objStr = new ObjString { {}, text };
+    return objStr;
+}
+
 
 class OpEqual {};
 class OpGreater {};
@@ -175,7 +182,7 @@ Variant variant_from_index(std::size_t index) {
 struct BinaryOperatorVisitor {
     VM &vm;
 
-    // Arithmetic
+    // Arithmetic on doubles only
     Value operator()(double a, double b, OpGreater _) {    return a > b; }
     Value operator()(double a, double b, OpLess _) {       return a < b; }
     Value operator()(double a, double b, OpSubtract _) {   return a - b; }
@@ -184,8 +191,13 @@ struct BinaryOperatorVisitor {
 
     // Add
     Value operator()(double a, double b, OpAdd _) { return a + b; }
+    Value operator()(ObjString *a, ObjString *b, OpAdd _) {
+        return vm.allocateString(a->text + b->text);
+    }
     
     // Equal
+    Value operator()(ObjString *a, ObjString *b, OpEqual _) { return a->text == b->text; }
+
     template<class T>
     Value operator()(T a, T b, OpEqual _) { return a == b; }
 

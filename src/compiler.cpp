@@ -43,6 +43,7 @@ struct Parser {
     void unary();
     void binary();
     void literal();
+    void string();
 
     Chunk &currentChunk() { return *chunk; }
     void emitByte(uint8_t byte) {
@@ -255,6 +256,15 @@ void Parser::literal() {
     }
 }
 
+void Parser::string() {
+    auto str = previous.text;
+    str.remove_prefix(1);
+    str.remove_suffix(1);
+    // TODO: Garbage collection
+    auto objStr = new ObjString { {}, std::string(str) };
+    emitConstant(objStr);
+}
+
 ParseRule rules[] = {
     {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
     {nullptr,           nullptr,           Precedence::None},       // RightParen
@@ -276,7 +286,7 @@ ParseRule rules[] = {
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // Less
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // LessEqual
     {nullptr,           nullptr,           Precedence::None},       // Identifier
-    {nullptr,           nullptr,           Precedence::None},       // String
+    {&Parser::string,   nullptr,           Precedence::None},       // String
     {&Parser::number,   nullptr,           Precedence::None},       // Number
     {nullptr,           nullptr,           Precedence::None},       // And
     {nullptr,           nullptr,           Precedence::None},       // Class
