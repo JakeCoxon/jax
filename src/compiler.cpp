@@ -15,6 +15,10 @@ enum class Precedence {
     Primary
 };
 
+struct ExpressionState {
+    bool canAssign;
+};
+
 struct Parser {
     Token current;
     Token previous;
@@ -49,14 +53,14 @@ struct Parser {
     void expressionStatement();
     void varDeclaration();
     void expression();
-    void number();
-    void grouping();
-    void unary();
-    void binary();
-    void literal();
-    void string();
-    void variable();
-    void namedVariable(Token name);
+    void number(ExpressionState es);
+    void grouping(ExpressionState es);
+    void unary(ExpressionState es);
+    void binary(ExpressionState es);
+    void literal(ExpressionState es);
+    void string(ExpressionState es);
+    void variable(ExpressionState es);
+    void namedVariable(Token name, ExpressionState es);
 
     Chunk &currentChunk() { return *chunk; }
     void emitByte(uint8_t byte) {
@@ -74,7 +78,7 @@ struct Parser {
     }
 };
 
-using ParseFn = void (Parser::*)();
+using ParseFn = void (Parser::*)(ExpressionState);
 
 struct ParseRule {
     ParseFn prefix;
@@ -234,12 +238,19 @@ void Parser::parsePrecedence(Precedence precedence) {
         return;
     }
 
-    (this->*prefixRule)();
+    ExpressionState es;
+    es.canAssign = precedence <= Precedence::Assignment;
+    
+    (this->*prefixRule)(es);
 
     while (precedence <= getRule(current.type).precedence) {
         advance();
         ParseFn infixRule = getRule(previous.type).infix;
-        (this->*infixRule)();
+        (this->*infixRule)(es);
+    }
+
+    if (es.canAssign && match(TokenType::Equal)) {
+        error("Invalid assignment target.");
     }
 }
 
@@ -305,19 +316,19 @@ void Parser::expression() {
     parsePrecedence(Precedence::Assignment);
 }
 
-void Parser::number() {
+void Parser::number(ExpressionState es) {
     // https://stackoverflow.com/questions/11752705/does-stdstring-contain-null-terminator
     // Don't want to risk it - just convert to a new string instead
     double value = strtod(std::string(previous.text).c_str(), nullptr);
     emitConstant(value);
 }
 
-void Parser::grouping() {
+void Parser::grouping(ExpressionState es) {
     expression();
     consume(TokenType::RightParen, "Expect ')' after expression.");
 }
 
-void Parser::unary() {
+void Parser::unary(ExpressionState es) {
     TokenType operatorType = previous.type;
     
     expression();
@@ -330,7 +341,7 @@ void Parser::unary() {
     }
 }
 
-void Parser::binary() {
+void Parser::binary(ExpressionState es) {
     TokenType operatorType = previous.type;
     
     ParseRule &rule = getRule(operatorType);
@@ -352,7 +363,7 @@ void Parser::binary() {
     }
 }
 
-void Parser::literal() {
+void Parser::literal(ExpressionState es) {
     switch (previous.type) {
         case TokenType::False: emitByte(OpCode::False); break;
         case TokenType::True: emitByte(OpCode::True); break;
@@ -361,7 +372,7 @@ void Parser::literal() {
     }
 }
 
-void Parser::string() {
+void Parser::string(ExpressionState es) {
     auto str = previous.text;
     str.remove_prefix(1);
     str.remove_suffix(1);
@@ -370,13 +381,13 @@ void Parser::string() {
     emitConstant(objStr);
 }
 
-void Parser::variable() {
-    namedVariable(previous);
+void Parser::variable(ExpressionState es) {
+    namedVariable(previous, es);
 }
 
-void Parser::namedVariable(Token name) {
+void Parser::namedVariable(Token name, ExpressionState es) {
     uint8_t arg = identifierConstant(&name);
-    if (match(TokenType::Equal)) {
+    if (es.canAssign && match(TokenType::Equal)) {
         expression();
         emitByte(OpCode::SetGlobal); emitByte(arg);
     } else {
