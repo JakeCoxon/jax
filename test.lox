@@ -1,3 +1,8 @@
 var apple = 2;
 apple = apple / 2;
 print apple + 3;
+{
+  var banana = 5;
+  banana = 5 + apple;
+  print banana;
+}

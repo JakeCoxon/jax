@@ -15,6 +15,8 @@ enum class OpCode: uint8_t {
     DefineGlobal,
     GetGlobal,
     SetGlobal,
+    GetLocal,
+    SetLocal,
     Equal,
     Greater,
     Less,
@@ -162,6 +164,16 @@ InterpretResult VM::run() {
                 found->second = peek(0);
                 break;
             }
+            case OpCode::GetLocal: {
+                uint8_t slot = readByte();
+                push(stack[slot]);
+                break;
+            }
+            case OpCode::SetLocal: {
+                uint8_t slot = readByte();
+                stack[slot] = peek(0);
+                break;
+            }
             case OpCode::Equal:
             case OpCode::Greater:
             case OpCode::Less:
@@ -291,6 +303,12 @@ static int simpleInstruction(const char* name, int offset) {
     return offset + 1;
 }
 
+static int byteInstruction(const char* name, const Chunk &chunk, int offset) {
+    uint8_t slot = chunk.code[offset + 1];
+    printf("%-16s %4d\n", name, slot);
+    return offset + 2; 
+}
+
 static int constantInstruction(const char* name, const Chunk &chunk, int offset) {
     uint8_t constant = chunk.code[offset + 1];
     printf("%-16s %4d '", name, constant);
@@ -322,11 +340,15 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
         case OpCode::Pop:
             return simpleInstruction("Pop", offset);
         case OpCode::DefineGlobal:
-            return simpleInstruction("DefineGlobal", offset);
+            return constantInstruction("DefineGlobal", chunk, offset);
         case OpCode::GetGlobal:
-            return simpleInstruction("GetGlobal", offset);
+            return constantInstruction("GetGlobal", chunk, offset);
         case OpCode::SetGlobal:
-            return simpleInstruction("SetGlobal", offset);
+            return constantInstruction("SetGlobal", chunk, offset);
+        case OpCode::GetLocal:
+            return byteInstruction("GetLocal", chunk, offset);
+        case OpCode::SetLocal:
+            return byteInstruction("SetLocal", chunk, offset);
         case OpCode::Equal:
             return simpleInstruction("Equal", offset);
         case OpCode::Less:

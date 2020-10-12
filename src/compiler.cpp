@@ -1,6 +1,8 @@
 #include <vector>
 #include <string>
 
+#define UINT8_COUNT (UINT8_MAX + 1)
+
 enum class Precedence {
     None,
     Assignment,  // =
@@ -15,21 +17,42 @@ enum class Precedence {
     Primary
 };
 
+enum class VariableStatus {
+    Ok,
+    AlreadyExists,
+    TooMany
+};
+
+struct Local {
+    std::string_view name;
+    int depth;
+};
+
+struct Compiler {
+    std::vector<Local> locals;
+    int scopeDepth = 0;
+
+    int resolveLocal(const std::string_view &name);
+    VariableStatus declareVariable(const std::string_view& name);
+};
+
 struct ExpressionState {
     bool canAssign;
 };
+
 
 struct Parser {
     Token current;
     Token previous;
     Scanner &scanner;
     Chunk *chunk;
+    Compiler *compiler;
 
     bool hadError = false;
     bool panicMode = false;
 
-    Parser(Scanner &scanner, Chunk *chunk):
-        scanner(scanner), chunk(chunk) {};
+    Parser(Scanner &scanner, Chunk *chunk, Compiler *compiler):
+        scanner(scanner), chunk(chunk), compiler(compiler) {};
 
     void advance();
     bool match(TokenType type);
@@ -40,9 +63,11 @@ struct Parser {
     void parsePrecedence(Precedence precedence);
     uint8_t parseVariable(const std::string &errorMessage);
     void defineVariable(uint8_t global);
-    uint8_t identifierConstant(Token *name);
+    uint8_t identifierConstant(const std::string_view &name);
     void synchronize();
     void endCompiler();
+    void beginScope();
+    void endScope();
 
     void emitReturn();
     void emitConstant(Value value);
@@ -53,6 +78,8 @@ struct Parser {
     void expressionStatement();
     void varDeclaration();
     void expression();
+    void block();
+
     void number(ExpressionState es);
     void grouping(ExpressionState es);
     void unary(ExpressionState es);
@@ -60,7 +87,7 @@ struct Parser {
     void literal(ExpressionState es);
     void string(ExpressionState es);
     void variable(ExpressionState es);
-    void namedVariable(Token name, ExpressionState es);
+    void namedVariable(const std::string_view &name, ExpressionState es);
 
     Chunk &currentChunk() { return *chunk; }
     void emitByte(uint8_t byte) {
@@ -90,7 +117,8 @@ static ParseRule &getRule(TokenType type);
 
 bool compile(const std::string &source, Chunk &chunk) {
     Scanner scanner { source };
-    Parser parser { scanner, &chunk };
+    Compiler compiler;
+    Parser parser { scanner, &chunk, &compiler };
     parser.advance();
 
     while (!parser.match(TokenType::EOF_)) {
@@ -99,23 +127,38 @@ bool compile(const std::string &source, Chunk &chunk) {
 
     parser.endCompiler();
 
-    // int line = -1;
-    // while (true) {
-    //     Token token = scanner.scanToken();
-    //     if (token.line != line) {
-    //         printf("%4d ", token.line);
-    //         line = token.line;
-    //     } else {
-    //         printf("   | ");
-    //     }
-    //     printf("%2zu ", token.start);
-    //     printf("%2d ", token.type);
-    //     std::cout << "'" << token.text << "'" << std::endl;
-    //     parser.errorAt(token, "Testing");
-
-    //     if (token.type == TokenType::EOF_) break;
-    // }
     return !parser.hadError;
+}
+
+int Compiler::resolveLocal(const std::string_view &name) {
+    for (int i = locals.size() - 1; i >= 0; i--) {
+        Local* local = &locals[i];
+        if (name == local->name) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+VariableStatus Compiler::declareVariable(const std::string_view& name) {
+    if (scopeDepth == 0) return VariableStatus::Ok;
+
+    for (int i = locals.size() - 1; i >= 0; i--) {
+        Local* local = &locals[i];
+        if (local->depth != -1 && local->depth < scopeDepth) {
+            break; 
+        }
+
+        if (name == local->name) {
+            return VariableStatus::AlreadyExists;
+        }
+    }
+    if (locals.size() == UINT8_COUNT) {
+        return VariableStatus::TooMany;
+    }
+    locals.push_back(Local { name, scopeDepth });
+    return VariableStatus::Ok;
 }
 
 void Parser::advance() {
@@ -221,6 +264,20 @@ void Parser::endCompiler() {
 #endif
 }
 
+void Parser::beginScope() {
+    compiler->scopeDepth ++;
+}
+
+void Parser::endScope() {
+    compiler->scopeDepth --;
+    while (compiler->locals.size() > 0 &&
+            compiler->locals.back().depth >
+            compiler->scopeDepth) {
+        emitByte(OpCode::Pop);
+        compiler->locals.pop_back();
+    }
+}
+
 void Parser::emitReturn() {
     emitByte(OpCode::Return);
 }
@@ -257,16 +314,29 @@ void Parser::parsePrecedence(Precedence precedence) {
 
 uint8_t Parser::parseVariable(const std::string &errorMessage) {
     consume(TokenType::Identifier, errorMessage);
-    return identifierConstant(&previous);
+    auto status = compiler->declareVariable(previous.text);
+    switch (status) {
+        case VariableStatus::AlreadyExists:
+            error("Already variable with this name in this scope.");
+        case VariableStatus::TooMany:
+            error("Too many local variables on the stack.");
+        case VariableStatus::Ok:
+            break;
+    }
+    if (compiler->scopeDepth > 0) return 0;
+    return identifierConstant(previous.text);
 }
 
 void Parser::defineVariable(uint8_t global) {
+    if (compiler->scopeDepth > 0) {
+        return;
+    }
     emitByte(OpCode::DefineGlobal); emitByte(global);
 }
 
-uint8_t Parser::identifierConstant(Token *name) {
+uint8_t Parser::identifierConstant(const std::string_view &name) {
     // TODO: Garbage collection
-    auto objStr = new ObjString { {}, std::string(name->text) };
+    auto objStr = new ObjString { {}, std::string(name) };
     return makeConstant(objStr);
 }
 
@@ -283,6 +353,10 @@ void Parser::declaration() {
 void Parser::statement() {
     if (match(TokenType::Print)) {
         printStatement();
+    } else if (match(TokenType::LeftBrace)) {
+        beginScope();
+        block();
+        endScope();
     } else {
         expressionStatement();
     }
@@ -314,6 +388,13 @@ void Parser::varDeclaration() {
 
 void Parser::expression() {
     parsePrecedence(Precedence::Assignment);
+}
+
+void Parser::block() {
+    while (!check(TokenType::RightBrace) && !check(TokenType::EOF_)) {
+        declaration();
+    }
+    consume(TokenType::RightBrace, "Expect '}' after block");
 }
 
 void Parser::number(ExpressionState es) {
@@ -382,16 +463,26 @@ void Parser::string(ExpressionState es) {
 }
 
 void Parser::variable(ExpressionState es) {
-    namedVariable(previous, es);
+    namedVariable(previous.text, es);
 }
 
-void Parser::namedVariable(Token name, ExpressionState es) {
-    uint8_t arg = identifierConstant(&name);
+void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
+    OpCode getOp, setOp;
+    int arg = compiler->resolveLocal(name);
+    if (arg != -1) {
+        getOp = OpCode::GetLocal;
+        setOp = OpCode::SetLocal;
+    } else {
+        arg = identifierConstant(name);
+        getOp = OpCode::GetGlobal;
+        setOp = OpCode::SetGlobal;
+    }
+
     if (es.canAssign && match(TokenType::Equal)) {
         expression();
-        emitByte(OpCode::SetGlobal); emitByte(arg);
+        emitByte(setOp); emitByte((uint8_t)arg);
     } else {
-        emitByte(OpCode::GetGlobal); emitByte(arg);
+        emitByte(getOp); emitByte((uint8_t)arg);
     }
 }
 
