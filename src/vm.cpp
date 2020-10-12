@@ -51,14 +51,20 @@ struct VM {
     InterpretResult interpret(const std::string &string);
     InterpretResult run();
     void binaryOperation(OpCode instruction);
+    void unaryOperation(OpCode instruction);
+
+    std::ostream &runtimeError();
 
     void resetStack() { stack.clear(); };
     void push(Value value) { stack.push_back(value); }
+    Value peek(int distance) { return stack[stack.size() - distance - 1]; }
     Value pop() {
         auto value = stack.back();
         stack.pop_back();
         return value;
     }
+
+    
 };
 
 InterpretResult VM::interpret(const std::string &source) {
@@ -72,6 +78,13 @@ InterpretResult VM::interpret(const std::string &source) {
 
     InterpretResult result = run();
     return result;
+}
+
+std::ostream &VM::runtimeError() {
+    int line = chunk->lines[ip - 1];
+    resetStack();
+    std::cerr << "[line " << line << " in script]";
+    return std::cerr;
 }
 
 InterpretResult VM::run() {
@@ -108,7 +121,10 @@ InterpretResult VM::run() {
                 binaryOperation(instruction);
                 break;
             }
-            case OpCode::Negate: push(-pop().asNumber()); break;
+            case OpCode::Negate:
+                unaryOperation(instruction);
+                if (stack.empty()) return InterpretResult::RuntimeError;
+                break;
             case OpCode::Return: {
                 std::cout << pop();
                 std::cout << std::endl;
@@ -119,6 +135,10 @@ InterpretResult VM::run() {
 }
 
 void VM::binaryOperation(OpCode instruction) {
+    if (!peek(0).isNumber() || !peek(1).isNumber()) {
+        runtimeError() << "Operands must be numbers." << std::endl;
+        return;
+    }
     double b = pop().asNumber();
     double a = pop().asNumber();
 
@@ -127,7 +147,21 @@ void VM::binaryOperation(OpCode instruction) {
         case OpCode::Subtract:  { push(a - b); break; }
         case OpCode::Multiply:  { push(a * b); break; }
         case OpCode::Divide:    { push(a / b); break; }
-        default: {}
+        default: return;
+    }
+}
+
+void VM::unaryOperation(OpCode instruction) {
+    switch (instruction) {
+        case OpCode::Negate: {
+            if (!peek(0).isNumber()) {
+                runtimeError() << "Operand must be a number." << std::endl;
+                return;
+            }
+            push(-pop().asNumber());
+            break;
+        }
+        default: return;
     }
 }
 
