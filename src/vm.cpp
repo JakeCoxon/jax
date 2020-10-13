@@ -61,6 +61,12 @@ struct ObjFunction: Obj {
     ObjFunction() {}
 };
 
+struct CallFrame {
+    ObjFunction *function;
+    size_t ip;
+    size_t firstSlot;
+};
+
 enum class InterpretResult {
     Ok,
     CompileError,
@@ -71,8 +77,7 @@ int disassembleInstruction(const Chunk &chunk, int offset);
 ObjFunction *compile(const std::string &source); // compiler.cpp
 
 struct VM {
-    Chunk *chunk;
-    unsigned long ip;
+    std::vector<CallFrame> frames;
 
     std::vector<Value> stack;
     std::unordered_map<std::string, Value> globals;
@@ -105,31 +110,34 @@ InterpretResult VM::interpret(const std::string &source) {
         return InterpretResult::CompileError;
     }
 
-    this->chunk = &function->chunk;
-    this->ip = 0;
     push(function);
+    frames.push_back(CallFrame { function, 0, 0 });
 
     InterpretResult result = run();
     return result;
 }
 
 std::ostream &VM::runtimeError() {
-    int line = chunk->lines[ip - 1];
+    CallFrame *frame = &frames.back();
+    int line = frame->function->chunk.lines[frame->ip - 1];
     resetStack();
     std::cerr << "[line " << line << " in script] ";
     return std::cerr;
 }
 
 InterpretResult VM::run() {
+    CallFrame *frame = &frames.back();
+
     auto readByte = [&]() -> uint8_t {
-        return chunk->code[ip++];
+        return frame->function->chunk.code[frame->ip++];
     };
     auto readConstant = [&]() -> Value { 
-        return chunk->constants[readByte()];
+        return frame->function->chunk.constants[readByte()];
     };
     auto readShort = [&]() -> uint16_t { 
-        ip += 2;
-        return (chunk->code[ip - 2] << 8) | chunk->code[ip - 1];
+        frame->ip += 2;
+        return (frame->function->chunk.code[frame->ip - 2] << 8) | 
+            frame->function->chunk.code[frame->ip - 1];
     };
     auto readString = [&]() -> ObjString& { 
         return readConstant().asString();
@@ -144,7 +152,7 @@ InterpretResult VM::run() {
             std::cout << " ]";
         }
         std::cout << std::endl;
-        disassembleInstruction(*chunk, ip);
+        disassembleInstruction(frame->function->chunk, frame->ip);
 #endif
 
         auto instruction = OpCode(readByte());
@@ -186,12 +194,12 @@ InterpretResult VM::run() {
             }
             case OpCode::GetLocal: {
                 uint8_t slot = readByte();
-                push(stack[slot]);
+                push(stack[frame->firstSlot + slot]);
                 break;
             }
             case OpCode::SetLocal: {
                 uint8_t slot = readByte();
-                stack[slot] = peek(0);
+                stack[frame->firstSlot + slot] = peek(0);
                 break;
             }
             case OpCode::Equal:
@@ -217,17 +225,17 @@ InterpretResult VM::run() {
             }
             case OpCode::Jump: {
                 int offset = readShort();
-                ip += offset;
+                frame->ip += offset;
                 break;
             }
             case OpCode::JumpIfFalse: {
                 int offset = readShort();
-                if (peek(0).isFalsey()) ip += offset;
+                if (peek(0).isFalsey()) frame->ip += offset;
                 break;
             }
             case OpCode::Loop: {
                 int offset = readShort();
-                ip -= offset;
+                frame->ip -= offset;
                 break;
             }
             case OpCode::Return: {
