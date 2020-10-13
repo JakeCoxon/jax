@@ -111,10 +111,12 @@ struct Parser {
     void binary(ExpressionState es);
     void literal(ExpressionState es);
     void string(ExpressionState es);
+    void namedVariable(const std::string_view &name, ExpressionState es);
     void variable(ExpressionState es);
     void and_(ExpressionState es);
     void or_(ExpressionState es);
-    void namedVariable(const std::string_view &name, ExpressionState es);
+    uint8_t argumentList();
+    void call(ExpressionState es);
 
     Chunk &currentChunk() { 
         return compiler->function->chunk;
@@ -668,6 +670,27 @@ void Parser::or_(ExpressionState es) {
     patchJump(endJump);
 }
 
+uint8_t Parser::argumentList() {
+    uint8_t argCount = 0;
+    if (!check(TokenType::RightParen)) {
+        do {
+            expression();
+            if (argCount == 255) {
+                error("Can't hve more than 255 arguments.");
+            }
+            argCount ++;
+        } while (match(TokenType::Comma));
+    }
+    consume(TokenType::RightParen, "Expect ')' after arguments.");
+    return argCount;
+}
+
+void Parser::call(ExpressionState es) {
+    uint8_t argCount = argumentList();
+    emitByte(OpCode::Call);
+    emitByte(argCount);
+}
+
 void Parser::variable(ExpressionState es) {
     namedVariable(previous.text, es);
 }
@@ -696,7 +719,7 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
 }
 
 ParseRule rules[] = {
-    {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
+    {&Parser::grouping, &Parser::call,     Precedence::Call},       // LeftParen
     {nullptr,           nullptr,           Precedence::None},       // RightParen
     {nullptr,           nullptr,           Precedence::None},       // LeftBrace
     {nullptr,           nullptr,           Precedence::None},       // RightBrace

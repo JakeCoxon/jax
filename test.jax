@@ -22,3 +22,5 @@ fun areWeHere() {
   print "Yes";
 }
 print areWeHere
+
+areWeHere()

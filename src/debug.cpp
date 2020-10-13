@@ -84,6 +84,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return jumpInstruction(chunk, "JumpIfFalse", 1, offset);
         case OpCode::Loop:
             return jumpInstruction(chunk, "Loop", -1, offset);
+        case OpCode::Call:
+            return byteInstruction(chunk, "Call", offset);
         case OpCode::Return:
             return simpleInstruction(chunk, "Return", offset);
     }

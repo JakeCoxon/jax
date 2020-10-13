@@ -5,6 +5,11 @@
 #define DEBUG_PRINT_CODE
 #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
+#define FRAMES_MAX 64
+
+// Overloaded helper for visit
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 enum class OpCode: uint8_t {
     Constant,
@@ -30,6 +35,7 @@ enum class OpCode: uint8_t {
     Jump,
     JumpIfFalse,
     Loop,
+    Call,
     Return,
 };
 
@@ -85,6 +91,8 @@ struct VM {
     InterpretResult interpret(const std::string &string);
     InterpretResult run();
     ObjString *allocateString(std::string string);
+    bool beginCall(ObjFunction* function, int argCount);
+    bool callValue(Value callee, int argCount);
     void binaryOperation(OpCode instruction);
     void unaryOperation(OpCode instruction);
 
@@ -238,6 +246,14 @@ InterpretResult VM::run() {
                 frame->ip -= offset;
                 break;
             }
+            case OpCode::Call: {
+                int argCount = readByte();
+                if (!callValue(peek(argCount), argCount)) {
+                    return InterpretResult::RuntimeError;
+                }
+                frame = &frames.back();
+                break;
+            }
             case OpCode::Return: {
                 std::cout << std::endl;
                 return InterpretResult::Ok;
@@ -251,6 +267,38 @@ ObjString *VM::allocateString(std::string text) {
     auto objStr = new ObjString(text);
     return objStr;
 }
+
+bool VM::beginCall(ObjFunction* function, int argCount) {
+    if (argCount != function->arity) {
+        runtimeError() << "Expected " << function->arity << 
+            " arguments but got " << argCount << "." << std::endl;
+        return false;
+    }
+
+    if (frames.size() == FRAMES_MAX) {
+        runtimeError() << "Stack overflow." << std::endl;
+        return false;
+    }
+    frames.push_back(CallFrame {
+        function, 0, stack.size() - argCount - 1
+    });
+    return true;
+}
+
+
+
+bool VM::callValue(Value callee, int argCount) {
+    return callee.visit(overloaded {
+        [&](ObjFunction *function) -> bool {
+            return beginCall(function, argCount);
+        },
+        [&](auto value) -> bool {
+            runtimeError() << "Cannot call value: " << value << std::endl;
+            return false;
+        }
+    });
+}
+
 
 void VM::binaryOperation(OpCode instruction) {
 
