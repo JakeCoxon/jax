@@ -27,6 +27,7 @@ enum class OpCode: uint8_t {
     Not,
     Negate,
     Print,
+    Jump,
     JumpIfFalse,
     Return,
 };
@@ -200,6 +201,11 @@ InterpretResult VM::run() {
                 std::cout << pop() << std::endl;
                 break;
             }
+            case OpCode::Jump: {
+                int offset = readShort();
+                ip += offset;
+                break;
+            }
             case OpCode::JumpIfFalse: {
                 int offset = readShort();
                 if (peek(0).isFalsey()) ip += offset;
@@ -308,18 +314,27 @@ void VM::unaryOperation(OpCode instruction) {
     }
 }
 
-static int simpleInstruction(const char* name, int offset) {
+
+static int simpleInstruction(const Chunk &chunk, const char* name, int offset) {
     std::cout << name << std::endl;
     return offset + 1;
 }
 
-static int byteInstruction(const char* name, const Chunk &chunk, int offset) {
+static int byteInstruction(const Chunk &chunk, const char* name, int offset) {
     uint8_t slot = chunk.code[offset + 1];
     printf("%-16s %4d\n", name, slot);
     return offset + 2; 
 }
 
-static int constantInstruction(const char* name, const Chunk &chunk, int offset) {
+static int jumpInstruction(const Chunk &chunk, const char* name, int sign, int offset) {
+    uint16_t jump = (uint16_t)(chunk.code[offset + 1] << 8);
+    jump |= chunk.code[offset + 2];
+    printf("%-16s %4d -> %d\n", name, offset,
+            offset + 3 + sign * jump);
+    return offset + 3;
+}
+
+static int constantInstruction(const Chunk &chunk, const char* name, int offset) {
     uint8_t constant = chunk.code[offset + 1];
     printf("%-16s %4d '", name, constant);
     std::cout << chunk.constants[constant];
@@ -340,49 +355,51 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
     auto instruction = OpCode(chunk.code[offset]);
     switch (instruction) {
         case OpCode::Constant:
-            return constantInstruction("Constant", chunk, offset);
+            return constantInstruction(chunk, "Constant", offset);
         case OpCode::Nil:
-            return simpleInstruction("Nil", offset);
+            return simpleInstruction(chunk, "Nil", offset);
         case OpCode::True:
-            return simpleInstruction("True", offset);
+            return simpleInstruction(chunk, "True", offset);
         case OpCode::False:
-            return simpleInstruction("False", offset);
+            return simpleInstruction(chunk, "False", offset);
         case OpCode::Pop:
-            return simpleInstruction("Pop", offset);
+            return simpleInstruction(chunk, "Pop", offset);
         case OpCode::DefineGlobal:
-            return constantInstruction("DefineGlobal", chunk, offset);
+            return constantInstruction(chunk, "DefineGlobal", offset);
         case OpCode::GetGlobal:
-            return constantInstruction("GetGlobal", chunk, offset);
+            return constantInstruction(chunk, "GetGlobal", offset);
         case OpCode::SetGlobal:
-            return constantInstruction("SetGlobal", chunk, offset);
+            return constantInstruction(chunk, "SetGlobal", offset);
         case OpCode::GetLocal:
-            return byteInstruction("GetLocal", chunk, offset);
+            return byteInstruction(chunk, "GetLocal", offset);
         case OpCode::SetLocal:
-            return byteInstruction("SetLocal", chunk, offset);
+            return byteInstruction(chunk, "SetLocal", offset);
         case OpCode::Equal:
-            return simpleInstruction("Equal", offset);
+            return simpleInstruction(chunk, "Equal", offset);
         case OpCode::Less:
-            return simpleInstruction("Less", offset);
+            return simpleInstruction(chunk, "Less", offset);
         case OpCode::Greater:
-            return simpleInstruction("Greater", offset);
+            return simpleInstruction(chunk, "Greater", offset);
         case OpCode::Add:
-            return simpleInstruction("Add", offset);
+            return simpleInstruction(chunk, "Add", offset);
         case OpCode::Subtract:
-            return simpleInstruction("Subtract", offset);
+            return simpleInstruction(chunk, "Subtract", offset);
         case OpCode::Multiply:
-            return simpleInstruction("Multiply", offset);
+            return simpleInstruction(chunk, "Multiply", offset);
         case OpCode::Divide:
-            return simpleInstruction("Divide", offset);
+            return simpleInstruction(chunk, "Divide", offset);
         case OpCode::Not:
-            return simpleInstruction("Not", offset);
+            return simpleInstruction(chunk, "Not", offset);
         case OpCode::Negate:
-            return simpleInstruction("Negate", offset);
+            return simpleInstruction(chunk, "Negate", offset);
         case OpCode::Print:
-            return simpleInstruction("Print", offset);
+            return simpleInstruction(chunk, "Print", offset);
+        case OpCode::Jump:
+            return jumpInstruction(chunk, "Jump", 1, offset);
         case OpCode::JumpIfFalse:
-            return simpleInstruction("JumpIfFalse", offset);
+            return jumpInstruction(chunk, "JumpIfFalse", 1, offset);
         case OpCode::Return:
-            return simpleInstruction("Return", offset);
+            return simpleInstruction(chunk, "Return", offset);
     }
 }
 

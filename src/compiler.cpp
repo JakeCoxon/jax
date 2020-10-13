@@ -404,11 +404,22 @@ void Parser::ifStatement() {
     consume(TokenType::LeftBrace, "Expect '{' after if");
 
     int thenJump = emitJump(OpCode::JumpIfFalse);
+    emitByte(OpCode::Pop);
     beginScope();
     block();
     endScope();
 
+    int elseJump = emitJump(OpCode::Jump);
+
     patchJump(thenJump);
+    emitByte(OpCode::Pop);
+
+    if (match(TokenType::Else)) {
+        beginScope();
+        block();
+        endScope();
+    }
+    patchJump(elseJump);
 }
 
 void Parser::varDeclaration() {
