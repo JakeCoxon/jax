@@ -231,74 +231,44 @@ ObjString *VM::allocateString(std::string text) {
     return objStr;
 }
 
-
-class OpEqual {};
-class OpGreater {};
-class OpLess {};
-class OpAdd {};
-class OpSubtract {};
-class OpMultiply {};
-class OpDivide {};
-
-using BinaryOperation = mpark::variant<
-    OpEqual, OpGreater, OpLess, OpAdd, OpSubtract, OpMultiply, OpDivide
->;
-
-template <class Variant, std::size_t I = 0>
-Variant variant_from_index(std::size_t index) {
-    if constexpr(I >= mpark::variant_size_v<Variant>)
-        throw std::runtime_error{"Variant index " + std::to_string(I + index) + " out of bounds"};
-    else
-        return index == 0
-            ? Variant{mpark::in_place_index<I>}
-            : variant_from_index<Variant, I + 1>(index - 1);
-}
-
-struct BinaryOperatorVisitor {
-    VM &vm;
-
-    // Arithmetic on doubles only
-    Value operator()(double a, double b, OpGreater _) {    return a > b; }
-    Value operator()(double a, double b, OpLess _) {       return a < b; }
-    Value operator()(double a, double b, OpSubtract _) {   return a - b; }
-    Value operator()(double a, double b, OpMultiply _) {   return a * b; }
-    Value operator()(double a, double b, OpDivide _) {     return a / b; }
-
-    // Add
-    Value operator()(double a, double b, OpAdd _) { return a + b; }
-    Value operator()(ObjString *a, ObjString *b, OpAdd _) {
-        return vm.allocateString(a->text + b->text);
-    }
-    
-    // Equal
-    Value operator()(ObjString *a, ObjString *b, OpEqual _) { return a->text == b->text; }
-
-    template<class T>
-    Value operator()(T a, T b, OpEqual _) { return a == b; }
-
-    template<class T, class U>
-    Value operator()(T a, U b, OpEqual _) { return false; }
-
-    // Default case 
-    template<class T, class U, class V>
-    Value operator()(T a, U b, V _) {
-        vm.runtimeError() << "Invalid operands for operator." << std::endl;
-        return Value::Nil();
-    }
-};
-
-
 void VM::binaryOperation(OpCode instruction) {
 
     Value b = peek(0);
     Value a = peek(1);
-    auto binaryOpIndex = variant_from_index<BinaryOperation>(
-        static_cast<size_t>(instruction) - static_cast<size_t>(OpCode::Equal)
-    );
 
-    Value result = rollbear::visit(BinaryOperatorVisitor{*this}, a.variant, b.variant, binaryOpIndex);
+    Value result = rollbear::visit([this](auto &a, auto &b, OpCode op) -> Value {
+        using A = std::decay_t<decltype(a)>;
+        using B = std::decay_t<decltype(b)>;
+
+        if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
+            if (op == OpCode::Greater)  return a > b;
+            if (op == OpCode::Less)     return a < b;
+            if (op == OpCode::Subtract) return a - b;
+            if (op == OpCode::Multiply) return a * b;
+            if (op == OpCode::Divide)   return a / b;
+        }
+
+        if (op == OpCode::Equal) { 
+            if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) { 
+                return a->text == b->text;
+            } else if constexpr (std::is_same_v<A, B>) { return a == b; }
+            else { return false; }
+        }
+
+        if (op == OpCode::Add) { 
+            if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
+                return allocateString(a->text + b->text);
+            }
+            else if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
+                return a + b;
+            }
+        }
+
+        runtimeError() << "Invalid operands for operator." << std::endl;
+        return Value::Nil();
+    }, a.variant, b.variant, instruction);
+
     if (stack.empty()) return;
-
     pop(); pop(); push(result);
 
 }
