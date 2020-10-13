@@ -74,6 +74,7 @@ struct Parser {
     void parsePrecedence(Precedence precedence);
     uint8_t parseVariable(const std::string &errorMessage);
     void defineVariable(uint8_t global);
+    void markInitialized();
     uint8_t identifierConstant(const std::string_view &name);
     void synchronize();
     ObjFunction *endCompiler();
@@ -157,6 +158,9 @@ int Compiler::resolveLocal(const std::string_view &name) {
     for (int i = locals.size() - 1; i >= 0; i--) {
         Local* local = &locals[i];
         if (name == local->name) {
+            if (local->depth == -1) {
+                return -2;
+            }
             return i;
         }
     }
@@ -180,7 +184,7 @@ VariableStatus Compiler::declareVariable(const std::string_view& name) {
     if (locals.size() == UINT8_COUNT) {
         return VariableStatus::TooMany;
     }
-    locals.push_back(Local { name, scopeDepth });
+    locals.push_back(Local { name, -1 });
     return VariableStatus::Ok;
 }
 
@@ -398,9 +402,14 @@ uint8_t Parser::parseVariable(const std::string &errorMessage) {
 
 void Parser::defineVariable(uint8_t global) {
     if (compiler->scopeDepth > 0) {
+        markInitialized();
         return;
     }
     emitByte(OpCode::DefineGlobal); emitByte(global);
+}
+
+void Parser::markInitialized() {
+    compiler->locals.back().depth = compiler->scopeDepth;
 }
 
 uint8_t Parser::identifierConstant(const std::string_view &name) {
@@ -608,6 +617,9 @@ void Parser::variable(ExpressionState es) {
 void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     OpCode getOp, setOp;
     int arg = compiler->resolveLocal(name);
+    if (arg == -2) {
+        error("Can't read local variable in its own initializer.");
+    }
     if (arg != -1) {
         getOp = OpCode::GetLocal;
         setOp = OpCode::SetLocal;
