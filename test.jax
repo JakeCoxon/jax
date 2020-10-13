@@ -16,3 +16,9 @@ print apple + 3
   }
 
 }
+
+
+fun areWeHere() {
+  print "Yes";
+}
+print areWeHere

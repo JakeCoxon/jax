@@ -248,7 +248,7 @@ InterpretResult VM::run() {
 
 ObjString *VM::allocateString(std::string text) {
     // TODO: Garbage collection
-    auto objStr = new ObjString { {}, text };
+    auto objStr = new ObjString(text);
     return objStr;
 }
 

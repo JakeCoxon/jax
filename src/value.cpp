@@ -4,6 +4,8 @@
 struct Obj {};
 struct ObjString: Obj {
     std::string text;
+
+    ObjString(const std::string &text): text(text) {}
 };
 
 struct ObjFunction;

@@ -30,17 +30,20 @@ enum class FunctionType {
 struct Local {
     std::string_view name;
     int depth;
+
+    Local(const std::string_view &name, int depth):
+        name(name), depth(depth) {};
 };
 
 struct Compiler {
     ObjFunction *function;
     FunctionType type;
+    Compiler *enclosing;
     std::vector<Local> locals;
     int scopeDepth = 0;
 
-    Compiler(ObjFunction *function, FunctionType type)
-            : function(function), type(type) {
-        locals.push_back(Local { "", 0 });
+    Compiler(ObjFunction *function, FunctionType type, Compiler *enclosing)
+            : function(function), type(type), enclosing(enclosing) {
     }
 
     int resolveLocal(const std::string_view &name);
@@ -62,7 +65,9 @@ struct Parser {
     bool panicMode = false;
 
     Parser(Scanner &scanner, Compiler *compiler):
-        scanner(scanner), compiler(compiler) {};
+            scanner(scanner), compiler(compiler) {
+        initCompiler(compiler, FunctionType::Script);
+    };
 
     void advance();
     bool match(TokenType type);
@@ -77,6 +82,7 @@ struct Parser {
     void markInitialized();
     uint8_t identifierConstant(const std::string_view &name);
     void synchronize();
+    void initCompiler(Compiler *compiler, FunctionType type);
     ObjFunction *endCompiler();
     void beginScope();
     void endScope();
@@ -96,6 +102,8 @@ struct Parser {
     void varDeclaration();
     void expression();
     void block();
+    void function(FunctionType type);
+    void funDeclaration();
 
     void number(ExpressionState es);
     void grouping(ExpressionState es);
@@ -139,7 +147,7 @@ static ParseRule &getRule(TokenType type);
 ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
-    Compiler compiler(function, FunctionType::Script);
+    Compiler compiler(function, FunctionType::Script, nullptr);
     Parser parser { scanner, &compiler };
     parser.advance();
 
@@ -295,15 +303,28 @@ void Parser::synchronize() {
     }
 }
 
+void Parser::initCompiler(Compiler *compiler, FunctionType type) {
+    this->compiler = compiler;
+    // TODO: Garbage collection
+    if (type != FunctionType::Script) {
+        compiler->function->name = new ObjString(std::string(previous.text));
+    }
+    compiler->locals.push_back(Local("", 0));
+
+}
+
+
+
 ObjFunction *Parser::endCompiler() {
     emitReturn();
     ObjFunction *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
     if (!hadError) {
-        disassembleChunk(currentChunk(), function->name != NULL
-        ? function->name->text : "<script>");
+        disassembleChunk(currentChunk(), function->name != nullptr
+            ? function->name->text : "<script>");
     }
 #endif
+    compiler = compiler->enclosing;
     return function;
 }
 
@@ -409,17 +430,20 @@ void Parser::defineVariable(uint8_t global) {
 }
 
 void Parser::markInitialized() {
+    if (compiler->scopeDepth == 0) return;
     compiler->locals.back().depth = compiler->scopeDepth;
 }
 
 uint8_t Parser::identifierConstant(const std::string_view &name) {
     // TODO: Garbage collection
-    auto objStr = new ObjString { {}, std::string(name) };
+    auto objStr = new ObjString(std::string(name));
     return makeConstant(objStr);
 }
 
 void Parser::declaration() {
-    if (match(TokenType::Var)) {
+    if (match(TokenType::Fun)) {
+        funDeclaration();
+    } else if (match(TokenType::Var)) {
         varDeclaration();
     } else {
         statement();
@@ -525,6 +549,40 @@ void Parser::block() {
     consume(TokenType::RightBrace, "Expect '}' after block");
 }
 
+void Parser::function(FunctionType type) {
+    auto function = new ObjFunction();
+    Compiler functionCompiler(function, type, compiler);
+    initCompiler(&functionCompiler, type);
+    beginScope();
+    consume(TokenType::LeftParen, "Expect '(' after function name.");
+    if (!check(TokenType::RightParen)) {
+        do {
+            function->arity++;
+            if (function->arity > 255) {
+                errorAtCurrent("Can't have more than 255 parameters.");
+            }
+
+            uint8_t paramConstant = parseVariable("Expect parameter name.");
+            defineVariable(paramConstant);
+        } while (match(TokenType::Comma));
+    }
+    consume(TokenType::RightParen, "Expect ')' after after parameters.");
+
+    consume(TokenType::LeftBrace, "Expect '{' before function body.");
+    block();
+
+    endCompiler();
+    emitByte(OpCode::Constant);
+    emitByte(makeConstant(function));
+}
+
+void Parser::funDeclaration() {
+    uint8_t global = parseVariable("Expect function name.");
+    markInitialized();
+    function(FunctionType::Function);
+    defineVariable(global);
+}
+
 void Parser::number(ExpressionState es) {
     // https://stackoverflow.com/questions/11752705/does-stdstring-contain-null-terminator
     // Don't want to risk it - just convert to a new string instead
@@ -586,7 +644,7 @@ void Parser::string(ExpressionState es) {
     str.remove_prefix(1);
     str.remove_suffix(1);
     // TODO: Garbage collection
-    auto objStr = new ObjString { {}, std::string(str) };
+    auto objStr = new ObjString(std::string(str));
     emitConstant(objStr);
 }
 
