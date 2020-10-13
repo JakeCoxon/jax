@@ -96,6 +96,7 @@ struct Parser {
     void declaration();
     void statement();
     void printStatement();
+    void returnStatement();
     void expressionStatement();
     void ifStatement();
     void whileStatement();
@@ -345,6 +346,7 @@ void Parser::endScope() {
 }
 
 void Parser::emitReturn() {
+    emitByte(OpCode::Nil);
     emitByte(OpCode::Return);
 }
 
@@ -459,6 +461,8 @@ void Parser::statement() {
         printStatement();
     } else if (match(TokenType::If)) {
         ifStatement();
+    } else if (match(TokenType::Return)) {
+        returnStatement();
     } else if (match(TokenType::While)) {
         whileStatement();
     } else if (match(TokenType::LeftBrace)) {
@@ -474,6 +478,19 @@ void Parser::printStatement() {
     expression();
     consumeEndStatement("Expect ';' or newline after value.");
     emitByte(OpCode::Print);
+}
+
+void Parser::returnStatement() {
+    if (compiler->type == FunctionType::Script) {
+        error("Can't return from top-level code.");
+    }
+    if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
+        emitReturn();
+    } else {
+        expression();
+        consumeEndStatement("Expect ';' or newline after return value");
+        emitByte(OpCode::Return);
+    }
 }
 
 void Parser::expressionStatement() {

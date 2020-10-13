@@ -17,10 +17,10 @@ print apple + 3
 
 }
 
-
-fun areWeHere() {
-  print "Yes";
+fun areWeHere(a) {
+  print a;
+  return "seven"
 }
 print areWeHere
 
-areWeHere()
+print areWeHere(apple)

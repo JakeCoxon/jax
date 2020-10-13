@@ -126,10 +126,20 @@ InterpretResult VM::interpret(const std::string &source) {
 }
 
 std::ostream &VM::runtimeError() {
-    CallFrame *frame = &frames.back();
-    int line = frame->function->chunk.lines[frame->ip - 1];
+    for (size_t i = 0; i < frames.size(); i++) {
+        CallFrame *frame = &frames[i];
+        ObjFunction *function = frame->function;
+        // -1 because the IP is sitting on the next instruction to be
+        // executed.
+        size_t instruction = frame->ip - 1;
+        fprintf(stderr, "[line %d] in ", function->chunk.lines[instruction]);
+        if (function->name == NULL) {
+            fprintf(stderr, "script\n");
+        } else {
+            fprintf(stderr, "%s()\n", function->name->text.c_str());
+        }
+    }
     resetStack();
-    std::cerr << "[line " << line << " in script] ";
     return std::cerr;
 }
 
@@ -255,8 +265,18 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::Return: {
-                std::cout << std::endl;
-                return InterpretResult::Ok;
+                Value result = pop();
+                frames.pop_back();
+                if (frames.size() == 0) {
+                    pop();
+                    return InterpretResult::Ok;    
+                }
+                int numToPop = stack.size() - frame->firstSlot;
+                for (int i = 0; i < numToPop; i++) {
+                    pop();
+                }
+                push(result);
+                frame = &frames.back();
             }
         }
     }
