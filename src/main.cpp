@@ -5,6 +5,7 @@
 #include "scanner.cpp"
 #include "value.cpp"
 #include "vm.cpp"
+#include "debug.cpp"
 #include "compiler.cpp"
 
 std::string readFile(const std::string &path) {

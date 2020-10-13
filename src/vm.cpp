@@ -38,6 +38,8 @@ struct Chunk {
     std::vector<Value> constants;
     std::vector<int> lines;
 
+    Chunk() {}
+
     void write(uint8_t byte, int line) {
         code.push_back(byte);
         lines.push_back(line);
@@ -51,6 +53,14 @@ struct Chunk {
     }
 };
 
+struct ObjFunction: Obj {
+    int arity = 0;
+    Chunk chunk {};
+    ObjString *name;
+
+    ObjFunction() {}
+};
+
 enum class InterpretResult {
     Ok,
     CompileError,
@@ -58,7 +68,7 @@ enum class InterpretResult {
 };
 
 int disassembleInstruction(const Chunk &chunk, int offset);
-bool compile(const std::string &source, Chunk &chunk); // compiler.cpp
+ObjFunction *compile(const std::string &source); // compiler.cpp
 
 struct VM {
     Chunk *chunk;
@@ -87,14 +97,17 @@ struct VM {
     
 };
 
+
+
 InterpretResult VM::interpret(const std::string &source) {
-    Chunk chunk;
-    if (!compile(source, chunk)) {
+    ObjFunction *function = compile(source);
+    if (!function) {
         return InterpretResult::CompileError;
     }
 
-    this->chunk = &chunk;
+    this->chunk = &function->chunk;
     this->ip = 0;
+    push(function);
 
     InterpretResult result = run();
     return result;
@@ -290,101 +303,64 @@ void VM::unaryOperation(OpCode instruction) {
     }
 }
 
-
-static int simpleInstruction(const Chunk &chunk, const char* name, int offset) {
-    std::cout << name << std::endl;
-    return offset + 1;
-}
-
-static int byteInstruction(const Chunk &chunk, const char* name, int offset) {
-    uint8_t slot = chunk.code[offset + 1];
-    printf("%-16s %4d\n", name, slot);
-    return offset + 2; 
-}
-
-static int jumpInstruction(const Chunk &chunk, const char* name, int sign, int offset) {
-    uint16_t jump = (uint16_t)(chunk.code[offset + 1] << 8);
-    jump |= chunk.code[offset + 2];
-    printf("%-16s %4d -> %d\n", name, offset,
-            offset + 3 + sign * jump);
-    return offset + 3;
-}
-
-static int constantInstruction(const Chunk &chunk, const char* name, int offset) {
-    uint8_t constant = chunk.code[offset + 1];
-    printf("%-16s %4d '", name, constant);
-    std::cout << chunk.constants[constant];
-    printf("'\n");
-    return offset + 2;
-}
-
-
-int disassembleInstruction(const Chunk &chunk, int offset) {
-    printf("%04d ", offset);
-
-    if (offset > 0 && chunk.lines[offset] == chunk.lines[offset - 1]) {
-        printf("   | ");
-    } else {
-        printf("%4d ", chunk.lines[offset]);
+struct OutputVisitor {
+    std::ostream &os;
+    void operator()(mpark::monostate n) { os << "nil"; }
+    void operator()(double d) { os << d; }
+    void operator()(bool b) { os << (b ? "true" : "false"); }
+    void operator()(ObjString *s) { os << s->text; }
+    void operator()(ObjFunction *f) { 
+        if (!f->name)
+            os << "<script>";
+        else os << "<fn " << f->name->text << ">";
     }
 
-    auto instruction = OpCode(chunk.code[offset]);
-    switch (instruction) {
-        case OpCode::Constant:
-            return constantInstruction(chunk, "Constant", offset);
-        case OpCode::Nil:
-            return simpleInstruction(chunk, "Nil", offset);
-        case OpCode::True:
-            return simpleInstruction(chunk, "True", offset);
-        case OpCode::False:
-            return simpleInstruction(chunk, "False", offset);
-        case OpCode::Pop:
-            return simpleInstruction(chunk, "Pop", offset);
-        case OpCode::DefineGlobal:
-            return constantInstruction(chunk, "DefineGlobal", offset);
-        case OpCode::GetGlobal:
-            return constantInstruction(chunk, "GetGlobal", offset);
-        case OpCode::SetGlobal:
-            return constantInstruction(chunk, "SetGlobal", offset);
-        case OpCode::GetLocal:
-            return byteInstruction(chunk, "GetLocal", offset);
-        case OpCode::SetLocal:
-            return byteInstruction(chunk, "SetLocal", offset);
-        case OpCode::Equal:
-            return simpleInstruction(chunk, "Equal", offset);
-        case OpCode::Less:
-            return simpleInstruction(chunk, "Less", offset);
-        case OpCode::Greater:
-            return simpleInstruction(chunk, "Greater", offset);
-        case OpCode::Add:
-            return simpleInstruction(chunk, "Add", offset);
-        case OpCode::Subtract:
-            return simpleInstruction(chunk, "Subtract", offset);
-        case OpCode::Multiply:
-            return simpleInstruction(chunk, "Multiply", offset);
-        case OpCode::Divide:
-            return simpleInstruction(chunk, "Divide", offset);
-        case OpCode::Not:
-            return simpleInstruction(chunk, "Not", offset);
-        case OpCode::Negate:
-            return simpleInstruction(chunk, "Negate", offset);
-        case OpCode::Print:
-            return simpleInstruction(chunk, "Print", offset);
-        case OpCode::Jump:
-            return jumpInstruction(chunk, "Jump", 1, offset);
-        case OpCode::JumpIfFalse:
-            return jumpInstruction(chunk, "JumpIfFalse", 1, offset);
-        case OpCode::Loop:
-            return jumpInstruction(chunk, "Loop", -1, offset);
-        case OpCode::Return:
-            return simpleInstruction(chunk, "Return", offset);
-    }
+    template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
+};
+
+inline std::ostream &operator<<(std::ostream &os, const Value &v) {
+    v.visit(OutputVisitor { os });
+    return os;
 }
 
-void disassembleChunk(const Chunk &chunk, const char* name) {
-    printf("== %s ==\n", name);
-
-    for (unsigned long offset = 0; offset < chunk.code.size();) {
-        offset = disassembleInstruction(chunk, offset);
+struct ToStringVisitor {
+    std::string operator()(mpark::monostate n) { return "nil"; }
+    std::string operator()(double d) { return std::to_string(d); }
+    std::string operator()(bool b) { return (b ? "true" : "false"); }
+    std::string operator()(ObjString *s) { return s->text; }
+    std::string operator()(ObjFunction *f) { 
+        if (!f->name)
+            return "<script>";
+        return "<fn " + f->name->text + ">";
     }
+
+    template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
+};
+
+std::string toString(const Value &value) {
+    return value.visit(ToStringVisitor());
+}
+
+
+struct IsFalseyVisitor {
+    bool operator()(mpark::monostate n) { return true; }
+    bool operator()(double d) { return false; }
+    bool operator()(bool b) { return !b; }
+    bool operator()(ObjString *s) { return false; }
+    bool operator()(ObjFunction *f) { return false; }
+
+    template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
+};
+
+bool Value::isFalsey() const {
+    return visit(IsFalseyVisitor());
+}
+
+struct IsEqualVisitor {
+    template<class T> bool operator()(const T a, const T b) const { return a == b; }
+    template<class T, class U> bool operator()(const T a, const U b) const { return false; }
+};
+
+bool Value::operator==(Value &rhs) const {
+    return rollbear::visit(IsEqualVisitor{}, variant, rhs.variant);
 }

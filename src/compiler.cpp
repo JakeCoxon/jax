@@ -23,14 +23,25 @@ enum class VariableStatus {
     TooMany
 };
 
+enum class FunctionType {
+    Function, Script,
+};
+
 struct Local {
     std::string_view name;
     int depth;
 };
 
 struct Compiler {
+    ObjFunction *function;
+    FunctionType type;
     std::vector<Local> locals;
     int scopeDepth = 0;
+
+    Compiler(ObjFunction *function, FunctionType type)
+            : function(function), type(type) {
+        locals.push_back(Local { "", 0 });
+    }
 
     int resolveLocal(const std::string_view &name);
     VariableStatus declareVariable(const std::string_view& name);
@@ -45,14 +56,13 @@ struct Parser {
     Token current;
     Token previous;
     Scanner &scanner;
-    Chunk *chunk;
     Compiler *compiler;
 
     bool hadError = false;
     bool panicMode = false;
 
-    Parser(Scanner &scanner, Chunk *chunk, Compiler *compiler):
-        scanner(scanner), chunk(chunk), compiler(compiler) {};
+    Parser(Scanner &scanner, Compiler *compiler):
+        scanner(scanner), compiler(compiler) {};
 
     void advance();
     bool match(TokenType type);
@@ -66,7 +76,7 @@ struct Parser {
     void defineVariable(uint8_t global);
     uint8_t identifierConstant(const std::string_view &name);
     void synchronize();
-    void endCompiler();
+    ObjFunction *endCompiler();
     void beginScope();
     void endScope();
 
@@ -97,7 +107,9 @@ struct Parser {
     void or_(ExpressionState es);
     void namedVariable(const std::string_view &name, ExpressionState es);
 
-    Chunk &currentChunk() { return *chunk; }
+    Chunk &currentChunk() { 
+        return compiler->function->chunk;
+    }
     void emitByte(uint8_t byte) {
         currentChunk().write(byte, previous.line);
     }
@@ -123,10 +135,11 @@ struct ParseRule {
 
 static ParseRule &getRule(TokenType type);
 
-bool compile(const std::string &source, Chunk &chunk) {
+ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
-    Compiler compiler;
-    Parser parser { scanner, &chunk, &compiler };
+    auto function = new ObjFunction();
+    Compiler compiler(function, FunctionType::Script);
+    Parser parser { scanner, &compiler };
     parser.advance();
 
     while (!parser.match(TokenType::EOF_)) {
@@ -136,8 +149,8 @@ bool compile(const std::string &source, Chunk &chunk) {
     }
 
     parser.endCompiler();
+    return parser.hadError ? nullptr : function;
 
-    return !parser.hadError;
 }
 
 int Compiler::resolveLocal(const std::string_view &name) {
@@ -278,13 +291,16 @@ void Parser::synchronize() {
     }
 }
 
-void Parser::endCompiler() {
+ObjFunction *Parser::endCompiler() {
     emitReturn();
+    ObjFunction *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
     if (!hadError) {
-        disassembleChunk(currentChunk(), "code");
+        disassembleChunk(currentChunk(), function->name != NULL
+        ? function->name->text : "<script>");
     }
 #endif
+    return function;
 }
 
 void Parser::beginScope() {
