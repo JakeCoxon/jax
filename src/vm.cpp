@@ -27,6 +27,7 @@ enum class OpCode: uint8_t {
     Not,
     Negate,
     Print,
+    JumpIfFalse,
     Return,
 };
 
@@ -111,6 +112,10 @@ InterpretResult VM::run() {
     auto readConstant = [&]() -> Value { 
         return chunk->constants[readByte()];
     };
+    auto readShort = [&]() -> uint16_t { 
+        ip += 2;
+        return (chunk->code[ip - 2] << 8) | chunk->code[ip - 1];
+    };
     auto readString = [&]() -> ObjString& { 
         return readConstant().asString();
     };
@@ -193,6 +198,11 @@ InterpretResult VM::run() {
             }
             case OpCode::Print: {
                 std::cout << pop() << std::endl;
+                break;
+            }
+            case OpCode::JumpIfFalse: {
+                int offset = readShort();
+                if (peek(0).isFalsey()) ip += offset;
                 break;
             }
             case OpCode::Return: {
@@ -369,6 +379,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction("Negate", offset);
         case OpCode::Print:
             return simpleInstruction("Print", offset);
+        case OpCode::JumpIfFalse:
+            return simpleInstruction("JumpIfFalse", offset);
         case OpCode::Return:
             return simpleInstruction("Return", offset);
     }

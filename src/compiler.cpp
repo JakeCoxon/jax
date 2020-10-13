@@ -71,11 +71,14 @@ struct Parser {
 
     void emitReturn();
     void emitConstant(Value value);
+    int emitJump(OpCode instruction);
+    void patchJump(int offset);
 
     void declaration();
     void statement();
     void printStatement();
     void expressionStatement();
+    void ifStatement();
     void varDeclaration();
     void expression();
     void block();
@@ -184,11 +187,11 @@ bool Parser::check(TokenType type) {
 }
 
 void Parser::consume(TokenType type, const std::string &message) {
-    if (current.type == type) {
-        advance();
+    if (current.type != type) {
+        errorAtCurrent(message);
         return;
     }
-    errorAtCurrent(message);
+    advance();
 }
 
 void Parser::errorAt(Token &token, const std::string &message) {
@@ -286,6 +289,26 @@ void Parser::emitConstant(Value value) {
     emitByte(OpCode::Constant); emitByte(makeConstant(value));
 }
 
+
+int Parser::emitJump(OpCode instruction) {
+    emitByte(instruction);
+    emitByte(0xff);
+    emitByte(0xff);
+    return currentChunk().code.size() - 2;
+}
+
+void Parser::patchJump(int offset) {
+    int jump = currentChunk().code.size() - offset - 2;
+
+    if (jump > UINT16_MAX) {
+        error("Too much code to jump over.");
+        return;
+    }
+
+    currentChunk().code[offset] = (jump >> 8) & 0xff;
+    currentChunk().code[offset + 1] = jump & 0xff;
+}
+
 void Parser::parsePrecedence(Precedence precedence) {
     advance();
 
@@ -353,6 +376,8 @@ void Parser::declaration() {
 void Parser::statement() {
     if (match(TokenType::Print)) {
         printStatement();
+    } else if (match(TokenType::If)) {
+        ifStatement();
     } else if (match(TokenType::LeftBrace)) {
         beginScope();
         block();
@@ -372,6 +397,18 @@ void Parser::expressionStatement() {
     expression();
     consume(TokenType::Semicolon, "Expect ';' after expression.");
     emitByte(OpCode::Pop);
+}
+
+void Parser::ifStatement() {
+    expression();
+    consume(TokenType::LeftBrace, "Expect '{' after if");
+
+    int thenJump = emitJump(OpCode::JumpIfFalse);
+    beginScope();
+    block();
+    endScope();
+
+    patchJump(thenJump);
 }
 
 void Parser::varDeclaration() {
