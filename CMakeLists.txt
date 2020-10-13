@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.14)
 
-project(mylang)
+project(jax)
 
 add_compile_options(
   -Wall -Wextra -pedantic -Werror
