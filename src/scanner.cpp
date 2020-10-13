@@ -1,27 +1,28 @@
 enum class TokenType {
-  // Single-character tokens.
-  LeftParen, RightParen,
-  LeftBrace, RightBrace,
-  Comma, Dot, Minus, Plus,
-  Semicolon, Slash, Star,
+    // Single-character tokens.
+    LeftParen, RightParen,
+    LeftBrace, RightBrace,
+    Comma, Dot, Minus, Plus,
+    Semicolon, Slash, Star,
 
-  // One or two character tokens.
-  Bang, BangEqual,
-  Equal, EqualEqual,
-  Greater, GreaterEqual,
-  Less, LessEqual,
+    // One or two character tokens.
+    Bang, BangEqual,
+    Equal, EqualEqual,
+    Greater, GreaterEqual,
+    Less, LessEqual,
 
-  // Literals.
-  Identifier, String, Number,
+    // Literals.
+    Identifier, String, Number,
 
-  // Keywords.
-  And, Class, Else, False,
-  For, Fun, If, Nil, Or,
-  Print, Return, Super, This,
-  True, Var, While,
+    // Keywords.
+    And, Class, Else, False,
+    For, Fun, If, Nil, Or,
+    Print, Return, Super, This,
+    True, Var, While,
 
-  Error,
-  EOF_
+    Newline,
+    Error,
+    EOF_
 };
 
 
@@ -38,6 +39,7 @@ struct Scanner {
     size_t current = 0;
     size_t lineStart = 0;
     int line = 1;
+    int parens = 0;
 
     Token scanToken();
     void skipWhitespace();
@@ -88,6 +90,7 @@ void Scanner::skipWhitespace() {
                 advance();
                 break;
             case '\n':
+                if (parens == 0) return;
                 line ++; lineStart = current + 1;
                 advance();
                 break;
@@ -118,6 +121,14 @@ Token Scanner::scanToken() {
 
     start = current;
 
+    if (peek() == '\n') {
+        // Construct token before we advance the line
+        Token newline = makeToken(TokenType::Newline);
+        line ++; lineStart = current + 1;
+        advance();
+        return newline;
+    }
+
     if (isAtEnd()) return makeToken(TokenType::EOF_);
 
     char c = advance();
@@ -126,8 +137,8 @@ Token Scanner::scanToken() {
     if (isDigit(c)) return number();
 
     switch (c) {
-        case '(': return makeToken(TokenType::LeftParen);
-        case ')': return makeToken(TokenType::RightParen);
+        case '(': parens ++; return makeToken(TokenType::LeftParen);
+        case ')': parens --; return makeToken(TokenType::RightParen);
         case '{': return makeToken(TokenType::LeftBrace);
         case '}': return makeToken(TokenType::RightBrace);
         case ';': return makeToken(TokenType::Semicolon);
@@ -138,17 +149,13 @@ Token Scanner::scanToken() {
         case '/': return makeToken(TokenType::Slash);
         case '*': return makeToken(TokenType::Star);
         case '!':
-            return makeToken(
-                match('=') ? TokenType::BangEqual : TokenType::Bang);
+            return makeToken(match('=') ? TokenType::BangEqual : TokenType::Bang);
         case '=':
-            return makeToken(
-                match('=') ? TokenType::EqualEqual : TokenType::Equal);
+            return makeToken(match('=') ? TokenType::EqualEqual : TokenType::Equal);
         case '<':
-            return makeToken(
-                match('=') ? TokenType::LessEqual : TokenType::Less);
+            return makeToken(match('=') ? TokenType::LessEqual : TokenType::Less);
         case '>':
-            return makeToken(
-                match('=') ? TokenType::GreaterEqual : TokenType::Greater);
+            return makeToken(match('=') ? TokenType::GreaterEqual : TokenType::Greater);
         case '"': return string();
     }
 

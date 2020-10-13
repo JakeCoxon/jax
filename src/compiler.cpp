@@ -57,7 +57,8 @@ struct Parser {
     void advance();
     bool match(TokenType type);
     bool check(TokenType type);
-    void consume(TokenType type, const std::string &messsage);
+    void consume(TokenType type, const std::string &message);
+    void consumeEndStatement(const std::string &message);
     void errorAt(Token &token, const std::string &message);
     uint8_t makeConstant(Value value);
     void parsePrecedence(Precedence precedence);
@@ -129,7 +130,9 @@ bool compile(const std::string &source, Chunk &chunk) {
     parser.advance();
 
     while (!parser.match(TokenType::EOF_)) {
+        while (parser.match(TokenType::Newline)) {}
         parser.declaration();
+        while (parser.match(TokenType::Newline)) {}
     }
 
     parser.endCompiler();
@@ -198,6 +201,18 @@ void Parser::consume(TokenType type, const std::string &message) {
     advance();
 }
 
+void Parser::consumeEndStatement(const std::string &message) {
+    if (current.type == TokenType::Semicolon || current.type == TokenType::Newline) {
+        advance();
+        return;
+    }
+    if (current.type == TokenType::EOF_) {
+        return;
+    }
+    
+    errorAtCurrent(message);
+}
+
 void Parser::errorAt(Token &token, const std::string &message) {
     if (panicMode) return;
     panicMode = true;
@@ -225,7 +240,7 @@ void Parser::errorAt(Token &token, const std::string &message) {
         }
         std::cerr << std::endl;
         for (size_t i = 0; i < offsetInLine; i++) std::cerr << ' ';
-        for (size_t i = 0; i < token.text.size(); i++) std::cerr << '^';
+        for (size_t i = 0; i < fmax(token.text.size(), 1); i++) std::cerr << '^';
         std::cerr << std::endl;
         std::cerr << std::endl;
     }
@@ -244,7 +259,8 @@ void Parser::synchronize() {
     panicMode = false;
 
     while (current.type != TokenType::EOF_) {
-        if  (previous.type == TokenType::Semicolon) return;
+        if (previous.type == TokenType::Semicolon ||
+            previous.type == TokenType::Newline) return;
 
         switch (current.type) {
             case TokenType::Class:
@@ -405,19 +421,19 @@ void Parser::statement() {
 
 void Parser::printStatement() {
     expression();
-    consume(TokenType::Semicolon, "Expect ';' after value.");
+    consumeEndStatement("Expect ';' or newline after value.");
     emitByte(OpCode::Print);
 }
 
 void Parser::expressionStatement() {
     expression();
-    consume(TokenType::Semicolon, "Expect ';' after expression.");
+    consumeEndStatement("Expect ';' or newline after expression.");
     emitByte(OpCode::Pop);
 }
 
 void Parser::ifStatement() {
     expression();
-    consume(TokenType::LeftBrace, "Expect '{' after if");
+    consume(TokenType::LeftBrace, "Expect '{' after if.");
 
     int thenJump = emitJump(OpCode::JumpIfFalse);
     emitByte(OpCode::Pop);
@@ -436,6 +452,7 @@ void Parser::ifStatement() {
         endScope();
     }
     patchJump(elseJump);
+    consumeEndStatement("Expect ';' or newline after block.");
 }
 
 void Parser::whileStatement() {
@@ -455,6 +472,7 @@ void Parser::whileStatement() {
 
     patchJump(exitJump);
     emitByte(OpCode::Pop);
+    consumeEndStatement("Expect ';' or newline after block.");
 }
 
 void Parser::varDeclaration() {
@@ -465,7 +483,7 @@ void Parser::varDeclaration() {
     } else {
         emitByte(OpCode::Nil);
     }
-    consume(TokenType::Semicolon, "Expect ';' after variable declaration.");
+    consumeEndStatement("Expect ';' or newline after variable declaration.");
     defineVariable(global);
 }
 
@@ -475,7 +493,9 @@ void Parser::expression() {
 
 void Parser::block() {
     while (!check(TokenType::RightBrace) && !check(TokenType::EOF_)) {
+        while (match(TokenType::Newline)) {}
         declaration();
+        while (match(TokenType::Newline)) {}
     }
     consume(TokenType::RightBrace, "Expect '}' after block");
 }
@@ -628,6 +648,7 @@ ParseRule rules[] = {
     {&Parser::literal,  nullptr,           Precedence::None},       // True
     {nullptr,           nullptr,           Precedence::None},       // Var
     {nullptr,           nullptr,           Precedence::None},       // While
+    {nullptr,           nullptr,           Precedence::None},       // Newline
     {nullptr,           nullptr,           Precedence::None},       // Error
     {nullptr,           nullptr,           Precedence::None},       // Eof
 };
