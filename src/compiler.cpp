@@ -90,6 +90,8 @@ struct Parser {
     void literal(ExpressionState es);
     void string(ExpressionState es);
     void variable(ExpressionState es);
+    void and_(ExpressionState es);
+    void or_(ExpressionState es);
     void namedVariable(const std::string_view &name, ExpressionState es);
 
     Chunk &currentChunk() { return *chunk; }
@@ -510,6 +512,26 @@ void Parser::string(ExpressionState es) {
     emitConstant(objStr);
 }
 
+void Parser::and_(ExpressionState es) {
+    int endJump = emitJump(OpCode::JumpIfFalse);
+
+    emitByte(OpCode::Pop);
+    parsePrecedence(Precedence::And);
+
+    patchJump(endJump);
+}
+
+void Parser::or_(ExpressionState es) {
+    int elseJump = emitJump(OpCode::JumpIfFalse);
+    int endJump = emitJump(OpCode::Jump);
+
+    patchJump(elseJump);
+    emitByte(OpCode::Pop);
+
+    parsePrecedence(Precedence::Or);
+    patchJump(endJump);
+}
+
 void Parser::variable(ExpressionState es) {
     namedVariable(previous.text, es);
 }
@@ -557,7 +579,7 @@ ParseRule rules[] = {
     {&Parser::variable, nullptr,           Precedence::None},       // Identifier
     {&Parser::string,   nullptr,           Precedence::None},       // String
     {&Parser::number,   nullptr,           Precedence::None},       // Number
-    {nullptr,           nullptr,           Precedence::None},       // And
+    {nullptr,           &Parser::and_,     Precedence::And},        // And
     {nullptr,           nullptr,           Precedence::None},       // Class
     {nullptr,           nullptr,           Precedence::None},       // Else
     {&Parser::literal,  nullptr,           Precedence::None},       // False
@@ -565,7 +587,7 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // Fun
     {nullptr,           nullptr,           Precedence::None},       // If
     {&Parser::literal,  nullptr,           Precedence::None},       // Nil
-    {nullptr,           nullptr,           Precedence::None},       // Or
+    {nullptr,           &Parser::and_,     Precedence::Or},         // Or
     {nullptr,           nullptr,           Precedence::None},       // Print
     {nullptr,           nullptr,           Precedence::None},       // Return
     {nullptr,           nullptr,           Precedence::None},       // Super
