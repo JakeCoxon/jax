@@ -73,12 +73,14 @@ struct Parser {
     void emitConstant(Value value);
     int emitJump(OpCode instruction);
     void patchJump(int offset);
+    void emitLoop(int loopStart);
 
     void declaration();
     void statement();
     void printStatement();
     void expressionStatement();
     void ifStatement();
+    void whileStatement();
     void varDeclaration();
     void expression();
     void block();
@@ -311,6 +313,16 @@ void Parser::patchJump(int offset) {
     currentChunk().code[offset + 1] = jump & 0xff;
 }
 
+void Parser::emitLoop(int loopStart) {
+    emitByte(OpCode::Loop);
+
+    int offset = currentChunk().code.size() - loopStart + 2;
+    if (offset > UINT16_MAX) error("Loop body too large.");
+
+    emitByte((offset >> 8) & 0xff);
+    emitByte(offset & 0xff);
+}
+
 void Parser::parsePrecedence(Precedence precedence) {
     advance();
 
@@ -380,6 +392,8 @@ void Parser::statement() {
         printStatement();
     } else if (match(TokenType::If)) {
         ifStatement();
+    } else if (match(TokenType::While)) {
+        whileStatement();
     } else if (match(TokenType::LeftBrace)) {
         beginScope();
         block();
@@ -422,6 +436,25 @@ void Parser::ifStatement() {
         endScope();
     }
     patchJump(elseJump);
+}
+
+void Parser::whileStatement() {
+    int loopStart = currentChunk().code.size();
+    expression();
+    consume(TokenType::LeftBrace, "Expect '{' after condition.");
+
+    int exitJump = emitJump(OpCode::JumpIfFalse);
+
+    emitByte(OpCode::Pop);
+
+    beginScope();
+    block();
+    endScope();
+
+    emitLoop(loopStart);
+
+    patchJump(exitJump);
+    emitByte(OpCode::Pop);
 }
 
 void Parser::varDeclaration() {

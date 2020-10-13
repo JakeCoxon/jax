@@ -29,6 +29,7 @@ enum class OpCode: uint8_t {
     Print,
     Jump,
     JumpIfFalse,
+    Loop,
     Return,
 };
 
@@ -209,6 +210,11 @@ InterpretResult VM::run() {
             case OpCode::JumpIfFalse: {
                 int offset = readShort();
                 if (peek(0).isFalsey()) ip += offset;
+                break;
+            }
+            case OpCode::Loop: {
+                int offset = readShort();
+                ip -= offset;
                 break;
             }
             case OpCode::Return: {
@@ -398,6 +404,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return jumpInstruction(chunk, "Jump", 1, offset);
         case OpCode::JumpIfFalse:
             return jumpInstruction(chunk, "JumpIfFalse", 1, offset);
+        case OpCode::Loop:
+            return jumpInstruction(chunk, "Loop", -1, offset);
         case OpCode::Return:
             return simpleInstruction(chunk, "Return", offset);
     }

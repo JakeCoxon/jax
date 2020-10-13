@@ -8,4 +8,9 @@ print apple + 3;
   if apple < 10 {
     print banana;
   }
+
+  while banana > 0 {
+    banana = banana - 1;
+    print banana;
+  }
 }
