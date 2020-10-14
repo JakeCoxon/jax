@@ -62,7 +62,7 @@ struct Chunk {
 struct ObjFunction: Obj {
     int arity = 0;
     Chunk chunk {};
-    ObjString *name;
+    ObjString *name = nullptr;
 
     ObjFunction() {}
 };
