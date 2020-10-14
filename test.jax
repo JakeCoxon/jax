@@ -1,11 +1,23 @@
 {
   var apple = 5
-  var thing = "jake"
+  var thing = "monkey"
   var banana = apple + 2
 
-  if apple == 5 {
-    print "ok"
+  fun hello(x: number, y: bool, z: string): void {
+    print "x plus 1 is "
+    print x
+    print "y is "
+    print y
+    print "z is "
+    print z
   }
+
+  fun things(a: number, b: number): number {
+    return a + 4 * b
+  }
+
+  hello(2, apple < 40, thing)
+  print 200 + things(5, 6)
 
   if apple < 0 {
     print banana

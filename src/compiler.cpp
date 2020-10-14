@@ -52,12 +52,24 @@ struct ExpressionState {
     bool canAssign;
 };
 
+struct NumberType {};
+struct BoolType {};
+struct StringType {};
+struct FunctionTypeObj {
+    std::vector<int> parameterTypes;
+    int returnType = -1;
+};
+using Type = mpark::variant<
+    mpark::monostate, NumberType, BoolType, StringType, FunctionTypeObj
+>;
 
 struct Parser {
     Token current;
     Token previous;
     Scanner &scanner;
     Compiler *compiler;
+
+    std::vector<Type> types;
 
     bool hadError = false;
     bool panicMode = false;
@@ -152,6 +164,7 @@ ObjFunction *compile(const std::string &source) {
     auto function = new ObjFunction();
     Compiler compiler(function, FunctionType::Script, nullptr);
     Parser parser { scanner, &compiler };
+    typecheckInit(&parser);
     parser.advance();
 
     while (!parser.match(TokenType::EOF_)) {
@@ -469,6 +482,7 @@ void Parser::printStatement() {
     expression();
     consumeEndStatement("Expect ';' or newline after value.");
     emitByte(OpCode::Print);
+    typecheckEndStatement(this);
 }
 
 void Parser::returnStatement() {
@@ -477,21 +491,26 @@ void Parser::returnStatement() {
     }
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
         emitReturn();
+        typecheckReturnNil(this, compiler->function);
     } else {
         expression();
         consumeEndStatement("Expect ';' or newline after return value");
         emitByte(OpCode::Return);
+        typecheckReturn(this, compiler->function);
     }
+
 }
 
 void Parser::expressionStatement() {
     expression();
     consumeEndStatement("Expect ';' or newline after expression.");
     emitByte(OpCode::Pop);
+    typecheckEndStatement(this);
 }
 
 void Parser::ifStatement() {
     expression();
+    typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after if.");
 
     int thenJump = emitJump(OpCode::JumpIfFalse);
@@ -517,6 +536,7 @@ void Parser::ifStatement() {
 void Parser::whileStatement() {
     int loopStart = currentChunk().code.size();
     expression();
+    typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after condition.");
 
     int exitJump = emitJump(OpCode::JumpIfFalse);
@@ -548,6 +568,7 @@ void Parser::varDeclaration() {
         typecheckVarDeclaration(this, type);
     } else {
         emitByte(OpCode::Nil);
+        typecheckNil(this, type);
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     defineVariable(global);
@@ -569,8 +590,11 @@ void Parser::block() {
 void Parser::function(FunctionType type) {
     auto function = new ObjFunction();
     Compiler functionCompiler(function, type, compiler);
+    uint8_t constant = makeConstant(function);
+    int functionType = typecheckFunctionDeclaration(this, function);
     initCompiler(&functionCompiler, type);
     beginScope();
+
     consume(TokenType::LeftParen, "Expect '(' after function name.");
     if (!check(TokenType::RightParen)) {
         do {
@@ -580,17 +604,26 @@ void Parser::function(FunctionType type) {
             }
 
             uint8_t paramConstant = parseVariable("Expect parameter name.");
+            consume(TokenType::Colon, "Expect ':' after parameter name.");
+            consume(TokenType::Identifier, "Expect type name after ':'.");
+            int type = typeByName(this, previous.text);
+            typecheckParameter(this, function, functionType, type);
             defineVariable(paramConstant);
         } while (match(TokenType::Comma));
     }
     consume(TokenType::RightParen, "Expect ')' after after parameters.");
+
+    consume(TokenType::Colon, "Expect ':' after argument list.");
+    consume(TokenType::Identifier, "Expect type name after ':'.");
+    int returnType = typeByName(this, previous.text);
+    typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
     block();
 
     endCompiler();
     emitByte(OpCode::Constant);
-    emitByte(makeConstant(function));
+    emitByte(constant);
 }
 
 void Parser::funDeclaration() {
@@ -695,6 +728,7 @@ void Parser::or_(ExpressionState es) {
 }
 
 uint8_t Parser::argumentList() {
+    int functionType = getFunctionType(this);
     uint8_t argCount = 0;
     if (!check(TokenType::RightParen)) {
         do {
@@ -702,6 +736,7 @@ uint8_t Parser::argumentList() {
             if (argCount == 255) {
                 error("Can't hve more than 255 arguments.");
             }
+            typecheckArgument(this, functionType, argCount);
             argCount ++;
         } while (match(TokenType::Comma));
     }
@@ -711,6 +746,7 @@ uint8_t Parser::argumentList() {
 
 void Parser::call(ExpressionState es) {
     uint8_t argCount = argumentList();
+    typecheckFunctionCall(this);
     emitByte(OpCode::Call);
     emitByte(argCount);
 }
