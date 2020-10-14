@@ -17,12 +17,6 @@ enum class Precedence {
     Primary
 };
 
-enum class VariableStatus {
-    Ok,
-    AlreadyExists,
-    TooMany
-};
-
 enum class FunctionType {
     Function, Script,
 };
@@ -34,6 +28,8 @@ struct Local {
     Local(const std::string_view &name, int depth):
         name(name), depth(depth) {};
 };
+
+struct Parser;
 
 struct Compiler {
     ObjFunction *function;
@@ -47,7 +43,7 @@ struct Compiler {
     }
 
     int resolveLocal(const std::string_view &name);
-    VariableStatus declareVariable(const std::string_view& name);
+    void declareVariable(Parser* parser, const std::string_view& name);
 };
 
 struct ExpressionState {
@@ -179,8 +175,8 @@ int Compiler::resolveLocal(const std::string_view &name) {
     return -1;
 }
 
-VariableStatus Compiler::declareVariable(const std::string_view& name) {
-    if (scopeDepth == 0) return VariableStatus::Ok;
+void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
+    if (scopeDepth == 0) return;
 
     for (int i = locals.size() - 1; i >= 0; i--) {
         Local* local = &locals[i];
@@ -189,14 +185,13 @@ VariableStatus Compiler::declareVariable(const std::string_view& name) {
         }
 
         if (name == local->name) {
-            return VariableStatus::AlreadyExists;
+            parser->error("Already variable with this name in this scope.");
         }
     }
     if (locals.size() == UINT8_COUNT) {
-        return VariableStatus::TooMany;
+        parser->error("Too many local variables on the stack.");
     }
     locals.push_back(Local { name, -1 });
-    return VariableStatus::Ok;
 }
 
 void Parser::advance() {
@@ -412,15 +407,7 @@ void Parser::parsePrecedence(Precedence precedence) {
 
 uint8_t Parser::parseVariable(const std::string &errorMessage) {
     consume(TokenType::Identifier, errorMessage);
-    auto status = compiler->declareVariable(previous.text);
-    switch (status) {
-        case VariableStatus::AlreadyExists:
-            error("Already variable with this name in this scope.");
-        case VariableStatus::TooMany:
-            error("Too many local variables on the stack.");
-        case VariableStatus::Ok:
-            break;
-    }
+    compiler->declareVariable(this, previous.text);
     if (compiler->scopeDepth > 0) return 0;
     return identifierConstant(previous.text);
 }
