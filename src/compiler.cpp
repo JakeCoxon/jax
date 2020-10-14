@@ -23,6 +23,7 @@ enum class FunctionType {
 
 struct Local {
     std::string_view name;
+    int type = 0;
     int depth;
 
     Local(const std::string_view &name, int depth):
@@ -36,6 +37,7 @@ struct Compiler {
     FunctionType type;
     Compiler *enclosing;
     std::vector<Local> locals;
+    std::vector<int> expressionTypeStack;
     int scopeDepth = 0;
 
     Compiler(ObjFunction *function, FunctionType type, Compiler *enclosing)
@@ -132,6 +134,8 @@ struct Parser {
         errorAt(previous, message);
     }
 };
+
+#include "typecheck.cpp"
 
 using ParseFn = void (Parser::*)(ExpressionState);
 
@@ -533,8 +537,15 @@ void Parser::whileStatement() {
 void Parser::varDeclaration() {
     uint8_t global = parseVariable("Expect variable name.");
 
+    int type = -1;
+    if (match(TokenType::Colon)) {
+        consume(TokenType::Identifier, "Expect type name after ':'.");
+        type = typeByName(this, previous.text);
+    }
+
     if (match(TokenType::Equal)) {
         expression();
+        typecheckVarDeclaration(this, type);
     } else {
         emitByte(OpCode::Nil);
     }
@@ -594,6 +605,7 @@ void Parser::number(ExpressionState es) {
     // Don't want to risk it - just convert to a new string instead
     double value = strtod(std::string(previous.text).c_str(), nullptr);
     emitConstant(value);
+    typecheckNumber(this);
 }
 
 void Parser::grouping(ExpressionState es) {
@@ -621,6 +633,8 @@ void Parser::binary(ExpressionState es) {
     int prec = static_cast<int>(rule.precedence);
     parsePrecedence(Precedence(prec + 1)); // +1 because of left associativity
 
+    typecheckBinary(this, operatorType);
+
     switch (operatorType) {
         case TokenType::BangEqual:     emitByte(OpCode::Equal); emitByte(OpCode::Not); break;
         case TokenType::EqualEqual:    emitByte(OpCode::Equal); break;
@@ -632,11 +646,13 @@ void Parser::binary(ExpressionState es) {
         case TokenType::Minus:         emitByte(OpCode::Subtract); break;
         case TokenType::Star:          emitByte(OpCode::Multiply); break;
         case TokenType::Slash:         emitByte(OpCode::Divide); break;
-        default: return;
+        default: break;
     }
+
 }
 
 void Parser::literal(ExpressionState es) {
+    typecheckLiteral(this);
     switch (previous.type) {
         case TokenType::False: emitByte(OpCode::False); break;
         case TokenType::True: emitByte(OpCode::True); break;
@@ -646,6 +662,8 @@ void Parser::literal(ExpressionState es) {
 }
 
 void Parser::string(ExpressionState es) {
+    typecheckString(this);
+
     auto str = previous.text;
     str.remove_prefix(1);
     str.remove_suffix(1);
@@ -661,6 +679,7 @@ void Parser::and_(ExpressionState es) {
     parsePrecedence(Precedence::And);
 
     patchJump(endJump);
+    typecheckAnd(this);
 }
 
 void Parser::or_(ExpressionState es) {
@@ -672,6 +691,7 @@ void Parser::or_(ExpressionState es) {
 
     parsePrecedence(Precedence::Or);
     patchJump(endJump);
+    typecheckOr(this);
 }
 
 uint8_t Parser::argumentList() {
@@ -717,8 +737,10 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     if (es.canAssign && match(TokenType::Equal)) {
         expression();
         emitByte(setOp); emitByte((uint8_t)arg);
+        typecheckAssign(this, arg);
     } else {
         emitByte(getOp); emitByte((uint8_t)arg);
+        typecheckVariable(this, arg);
     }
 }
 
@@ -734,6 +756,7 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // Semicolon
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Slash
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Star
+    {nullptr,           nullptr,           Precedence::None},       // Colon
     {&Parser::unary,    nullptr,           Precedence::None},       // Bang
     {nullptr,           &Parser::binary,   Precedence::Equality},   // BangEqual
     {nullptr,           nullptr,           Precedence::None},       // Equal

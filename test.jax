@@ -1,12 +1,13 @@
-var apple = 2
-apple = (apple / 
-  2 + 4 + 5 + 6 + 8 - 20)
-print apple + 3
 {
-  var banana = 5
-  banana = 5 + apple
+  var apple = 5
+  var thing = "jake"
+  var banana = apple + 2
 
-  if apple < 10 {
+  if apple == 5 {
+    print "ok"
+  }
+
+  if apple < 0 {
     print banana
   }
 
@@ -16,11 +17,3 @@ print apple + 3
   }
 
 }
-
-fun areWeHere(a) {
-  print a;
-  return "seven"
-}
-print areWeHere
-
-print areWeHere(apple)

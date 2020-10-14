@@ -4,6 +4,7 @@ enum class TokenType {
     LeftBrace, RightBrace,
     Comma, Dot, Minus, Plus,
     Semicolon, Slash, Star,
+    Colon,
 
     // One or two character tokens.
     Bang, BangEqual,
@@ -148,6 +149,7 @@ Token Scanner::scanToken() {
         case '+': return makeToken(TokenType::Plus);
         case '/': return makeToken(TokenType::Slash);
         case '*': return makeToken(TokenType::Star);
+        case ':': return makeToken(TokenType::Colon);
         case '!':
             return makeToken(match('=') ? TokenType::BangEqual : TokenType::Bang);
         case '=':
