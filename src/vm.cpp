@@ -94,6 +94,7 @@ struct VM {
     ObjString *allocateString(std::string string);
     bool beginCall(ObjFunction* function, int argCount);
     bool callValue(Value callee, int argCount);
+    void printOperation(int argCount);
     void binaryOperation(OpCode instruction);
     void unaryOperation(OpCode instruction);
 
@@ -239,7 +240,7 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::Print: {
-                std::cout << pop() << std::endl;
+                printOperation(readByte());
                 break;
             }
             case OpCode::Jump: {
@@ -318,6 +319,26 @@ bool VM::callValue(Value callee, int argCount) {
             return false;
         }
     });
+}
+
+void VM::printOperation(int argCount) {
+    ObjString &string = peek(argCount - 1).asString();
+
+    int numArg = 0;
+    for (size_t i = 0; i < string.text.size(); i++) {
+        if (string.text[i] == '{' && i < string.text.size()) {
+            i ++;
+            i ++;
+            std::cout << peek(argCount - 2 - numArg);
+            numArg++;
+        } else {
+            std::cout << string.text[i];
+        }
+    }
+    std::cout << std::endl;
+    for (int i = 0; i < argCount; i++) {
+        pop();
+    }
 }
 
 

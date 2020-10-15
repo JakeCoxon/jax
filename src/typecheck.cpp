@@ -226,3 +226,60 @@ void typecheckReturnNil(Parser *parser, ObjFunction *function) {
         parser->error("Type mismatch");
     }
 }
+
+struct PrintState {
+    int initialConstantIndex;
+    int expectedVarargs = 0;
+};
+
+PrintState typecheckPrintBegin(Parser *parser) {
+    PrintState ps;
+    ps.initialConstantIndex = parser->currentChunk().constants.size() - 1;
+    return ps;
+}
+
+void typecheckPrintArgument(Parser *parser, PrintState *printState, int argIndex) {
+    if (argIndex > 0) {
+        // All types can be printed
+        return;
+    }
+
+    int firstArgType = parser->compiler->expressionTypeStack.back();
+    if (firstArgType != TypeId::String) {
+        parser->error("Print expects a constant string as the first argument.");
+        return;
+    }
+
+    if ((int)parser->currentChunk().constants.size() != printState->initialConstantIndex + 2) {
+        parser->error("Print expects a constant string as the first argument.");
+        return;
+    }
+
+    Value stringConstant = parser->currentChunk().constants.back();
+    if (!stringConstant.isString()) {
+        parser->error("Print expects a constant string as the first argument.");
+        return;
+    }
+
+    ObjString s = stringConstant.asString();
+    for (size_t i = 0; i < s.text.size(); i++) {
+        if (s.text[i] == '{') {
+            i ++;
+            if (i >= s.text.size() || s.text[i] != '}') {
+                parser->error("Invalid syntax in print string");
+                return;
+            }
+            printState->expectedVarargs ++;
+        }
+    }
+}
+
+void typecheckPrintEnd(Parser *parser, PrintState *printState, int argCount) {
+    if (printState->expectedVarargs != argCount - 1) {
+        parser->error("Invalid number of arguments to print statement.");
+    }
+    for (int i = 0; i < argCount - 1; i++) {
+        typecheckPop(parser);
+    }
+    typecheckEndStatement(parser);
+}

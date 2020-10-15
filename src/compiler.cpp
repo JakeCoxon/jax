@@ -479,10 +479,26 @@ void Parser::statement() {
 }
 
 void Parser::printStatement() {
-    expression();
+
+    auto printState = typecheckPrintBegin(this);
+    uint8_t argCount = 0;
+    consume(TokenType::LeftParen, "Expect '(' after print.");
+    if (!check(TokenType::RightParen)) {
+        do {
+            expression();
+            if (argCount == 255) {
+                error("Can't hve more than 255 arguments.");
+            }
+            typecheckPrintArgument(this, &printState, argCount);
+            argCount ++;
+        } while (match(TokenType::Comma));
+    }
+    consume(TokenType::RightParen, "Expect ')' after arguments.");
     consumeEndStatement("Expect ';' or newline after value.");
+    
+    typecheckPrintEnd(this, &printState, argCount);
     emitByte(OpCode::Print);
-    typecheckEndStatement(this);
+    emitByte(argCount);
 }
 
 void Parser::returnStatement() {
