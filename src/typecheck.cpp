@@ -3,7 +3,8 @@ namespace TypeId {
     int Number = 1;
     int Bool = 2;
     int String = 3;
-    int Function = 4;
+    int Dynamic = 4;
+    int Function = 5;
 }
 
 int typeByName(Parser *parser, const std::string_view &name) {
@@ -16,6 +17,8 @@ int typeByName(Parser *parser, const std::string_view &name) {
         type = TypeId::Bool;
     } else if (name == "string") {
         type = TypeId::String;
+    } else if (name == "dynamic") {
+        type = TypeId::Dynamic;
     } else {
         std::string err = "Unknown type: ";
         err += name;
@@ -40,6 +43,9 @@ void typecheckPop(Parser *parser) {
 }
 
 bool typecheckIsAssignable(Parser *parser, int typeA, int typeB) {
+    if (typeA == TypeId::Dynamic) {
+        return true;    
+    }
     if (typeB == TypeId::Void) {
         return (typeA != TypeId::Number && typeA != TypeId::Bool);
     }
@@ -66,7 +72,7 @@ void typecheckVarDeclaration(Parser *parser, int type) {
     if (type == -1) {
         type = backType;
     }
-    if (backType != type) {
+    if (!typecheckIsAssignable(parser, type, backType)) {
         parser->error("Cannot declare a variable with a different type.");
     }
     parser->compiler->locals.back().type = type;

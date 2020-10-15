@@ -28,4 +28,9 @@
     print banana
   }
 
+  var dyn: dynamic = "thing"
+  print dyn
+  dyn = 200
+  print dyn
+
 }
