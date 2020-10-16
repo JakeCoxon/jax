@@ -10,7 +10,10 @@
   }
 
   fun things(a: number, b: number): number {
-    return a + 4 * b
+    if b > 0 {
+      return things(a + 1, b - 1)
+    }
+    return a
   }
 
   hello(2, apple < 40, thing)

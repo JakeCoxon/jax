@@ -2,8 +2,8 @@
 #include <string>
 #include <unordered_map>
 
-#define DEBUG_PRINT_CODE
-#define DEBUG_TRACE_EXECUTION
+// #define DEBUG_PRINT_CODE
+// #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
 

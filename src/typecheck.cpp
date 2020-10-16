@@ -227,6 +227,10 @@ void typecheckReturnNil(Parser *parser, ObjFunction *function) {
     }
 }
 
+void typecheckInnerFunction(Parser *parser, InnerFunction *innerFunction) {
+    parser->compiler->expressionTypeStack.push_back(innerFunction->function->type);
+}
+
 struct PrintState {
     int initialConstantIndex;
     int expectedVarargs = 0;

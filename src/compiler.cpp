@@ -30,6 +30,17 @@ struct Local {
         name(name), depth(depth) {};
 };
 
+struct Compiler;
+
+struct InnerFunction {
+    std::string_view name;
+    ObjFunction *function;
+    Compiler *compiler;
+    size_t constant;
+    size_t blockStart;
+    int blockLine;
+};
+
 struct Parser;
 
 struct Compiler {
@@ -38,6 +49,8 @@ struct Compiler {
     Compiler *enclosing;
     std::vector<Local> locals;
     std::vector<int> expressionTypeStack;
+    std::vector<InnerFunction> innerFunctions;
+
     int scopeDepth = 0;
 
     Compiler(ObjFunction *function, FunctionType type, Compiler *enclosing)
@@ -94,6 +107,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler, FunctionType type);
     ObjFunction *endCompiler();
+    void compileInnerFunctions();
     void beginScope();
     void endScope();
 
@@ -330,8 +344,13 @@ void Parser::initCompiler(Compiler *compiler, FunctionType type) {
 
 
 
+
+
 ObjFunction *Parser::endCompiler() {
     emitReturn();
+
+    compileInnerFunctions();
+
     ObjFunction *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
     if (!hadError) {
@@ -340,7 +359,35 @@ ObjFunction *Parser::endCompiler() {
     }
 #endif
     compiler = compiler->enclosing;
+
     return function;
+}
+
+void Parser::compileInnerFunctions() {
+    Compiler *initialCompiler = compiler;
+    if (initialCompiler->innerFunctions.size() == 0) {
+        return;
+    }
+
+    // Save any data that should be reset
+    size_t scannerStart = scanner.start;
+    int scannerLine = scanner.line;
+    
+    for (size_t i = 0; i < initialCompiler->innerFunctions.size(); i++) {
+        // Scanner scanner { scanner.source }; // Please avoid copying the string
+        scanner.current = initialCompiler->innerFunctions[i].blockStart;
+        scanner.start = initialCompiler->innerFunctions[i].blockStart;
+        scanner.line = initialCompiler->innerFunctions[i].blockLine;
+        advance();
+        compiler = initialCompiler->innerFunctions[i].compiler;
+        block();
+        endCompiler();
+    }
+
+    // Reset back
+    scanner.current = scannerStart;
+    scanner.line = scannerLine;
+    compiler = initialCompiler;
 }
 
 void Parser::beginScope() {
@@ -604,11 +651,12 @@ void Parser::block() {
 }
 
 void Parser::function(FunctionType type) {
+    auto name = previous.text;
     auto function = new ObjFunction();
-    Compiler functionCompiler(function, type, compiler);
+    Compiler *functionCompiler = new Compiler(function, type, compiler);
     uint8_t constant = makeConstant(function);
     int functionType = typecheckFunctionDeclaration(this, function);
-    initCompiler(&functionCompiler, type);
+    initCompiler(functionCompiler, type);
     beginScope();
 
     consume(TokenType::LeftParen, "Expect '(' after function name.");
@@ -629,15 +677,29 @@ void Parser::function(FunctionType type) {
     }
     consume(TokenType::RightParen, "Expect ')' after after parameters.");
 
-    consume(TokenType::Colon, "Expect ':' after argument list.");
-    consume(TokenType::Identifier, "Expect type name after ':'.");
-    int returnType = typeByName(this, previous.text);
+    int returnType = TypeId::Void;
+    if (match(TokenType::Colon)) {
+        consume(TokenType::Identifier, "Expect type name after ':'.");
+        returnType = typeByName(this, previous.text);
+    }
     typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
-    block();
+    functionCompiler->enclosing->innerFunctions.push_back(InnerFunction{ 
+        name, function, functionCompiler, constant, scanner.start, scanner.line
+    });
+    //block();
 
-    endCompiler();
+    int braces = 0;
+    while ((braces > 0 || !check(TokenType::RightBrace)) && !check(TokenType::EOF_)) {
+        if (match(TokenType::LeftBrace)) braces ++;
+        else if (match(TokenType::RightBrace)) braces --;
+        else advance();
+    }
+    consume(TokenType::RightBrace, "Expect '}' after block");
+
+    // endCompiler(); // Do this elsewhere
+    compiler = compiler->enclosing;
     emitByte(OpCode::Constant);
     emitByte(constant);
 }
@@ -780,20 +842,41 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     if (arg != -1) {
         getOp = OpCode::GetLocal;
         setOp = OpCode::SetLocal;
+
+        if (es.canAssign && match(TokenType::Equal)) {
+            expression();
+            emitByte(setOp); emitByte((uint8_t)arg);
+            typecheckAssign(this, arg);
+        } else {
+            emitByte(getOp); emitByte((uint8_t)arg);
+            typecheckVariable(this, arg);
+        }
     } else {
-        arg = identifierConstant(name);
-        getOp = OpCode::GetGlobal;
-        setOp = OpCode::SetGlobal;
+        int foundIndex = -1;
+        if (compiler->enclosing) {
+            for (size_t i = 0; i < compiler->enclosing->innerFunctions.size(); i++) {
+                if (compiler->enclosing->innerFunctions[i].name == name) {
+                    foundIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (foundIndex == -1) {
+            error("No variable found.");
+            return;
+        }
+
+        if (es.canAssign && match(TokenType::Equal)) {
+            error("Cannot assign to a function.");
+            return;
+        }
+
+        emitConstant(compiler->enclosing->innerFunctions[foundIndex].function);
+        typecheckInnerFunction(this, &compiler->enclosing->innerFunctions[foundIndex]);
     }
 
-    if (es.canAssign && match(TokenType::Equal)) {
-        expression();
-        emitByte(setOp); emitByte((uint8_t)arg);
-        typecheckAssign(this, arg);
-    } else {
-        emitByte(getOp); emitByte((uint8_t)arg);
-        typecheckVariable(this, arg);
-    }
+
 }
 
 ParseRule rules[] = {
