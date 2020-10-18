@@ -3,7 +3,7 @@
   var thing = "monkey"
   var banana = apple + 2
 
-  fun hello(x: number, y: bool, z: string): void {
+  fun hello(x: number, y: bool, z: string) {
     print("x plus 1 is {}", x)
     print("y is {}", y)
     print("z is {}", z)
@@ -28,13 +28,13 @@
   compare("hello", "jello")
   compare(5, 5)
 
-//  fun xxx(y) {
-//    if true {
-//      return
-//    }
-//    xxx(y - 1)
-//  }
-//  xxx(1)
+  fun xxx(y) {
+    if true {
+      return
+    }
+    xxx(y - 1)
+  }
+  xxx(1)
 
 //  if apple < 0 {
 //    print("Banana is {}", banana)
