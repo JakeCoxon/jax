@@ -185,7 +185,7 @@ void typecheckParameter(Parser *parser, ObjFunction *function, int functionType,
 int typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
     parser->types.push_back(FunctionTypeObj {});
     int functionType = parser->types.size() - 1;
-    parser->compiler->locals.back().type = functionType;
+    // parser->compiler->locals.back().type = functionType;
     return functionType;
 }
 
@@ -199,26 +199,25 @@ int getFunctionType(Parser *parser) {
     return parser->compiler->expressionTypeStack.back();
 }
 
-void typecheckFunctionArgument(Parser *parser, int functionType, int argCount) {
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
+void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDeclaration, int argIndex) {
     int argumentType = parser->compiler->expressionTypeStack.back();
-    if (functionTypeObj->parameterTypes[argCount] == TypeId::Unknown) {
+    if (functionDeclaration->parameters[argIndex].type == TypeId::Unknown) {
         // will be type checked later
         return;
     }
-    if (functionTypeObj->parameterTypes[argCount] != argumentType) {
+    if (functionDeclaration->parameters[argIndex].type != argumentType) {
         parser->error("Type mismatch");
     }
 }
 
 void typecheckBeginFunctionCall(Parser *parser, ObjFunction *function) {
-    parser->compiler->expressionTypeStack.push_back(function->type);
+    parser->compiler->expressionTypeStack.push_back(0);
 }
-void typecheckEndFunctionCall(Parser *parser, int argCount) {
+void typecheckEndFunctionCall(Parser *parser, ObjFunction *function, int argCount) {
     for (int i = 0; i < argCount; i++) {
         typecheckPop(parser);
     }
-    int functionType = parser->compiler->expressionTypeStack.back();
+    int functionType = function->type;
     parser->compiler->expressionTypeStack.pop_back();
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);

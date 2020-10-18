@@ -32,10 +32,19 @@ struct Local {
 
 struct Compiler;
 
+struct FunctionParameter {
+    std::string_view name;
+    int type;
+};
+
 struct FunctionDeclaration {
     std::string_view name;
+    std::vector<FunctionParameter> parameters;
+    int returnType;
+    bool fixedTypes; // No parameters that have Unknown type
     ObjFunction *function;
     Compiler *compiler;
+    Compiler *enclosingCompiler;
     size_t constant;
     size_t blockStart;
     int blockLine;
@@ -142,7 +151,7 @@ struct Parser {
     void variable(ExpressionState es);
     void and_(ExpressionState es);
     void or_(ExpressionState es);
-    uint8_t argumentList(int functionType);
+    uint8_t argumentList(FunctionDeclaration *functionDeclaration);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
     Chunk &currentChunk() { 
@@ -378,20 +387,13 @@ ObjFunction *Parser::endCompiler() {
 
 
 ObjFunction *Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
-    if (functionDeclaration->compiler->compiled) {
+    if (functionDeclaration->compiler && functionDeclaration->compiler->compiled) {
         return functionDeclaration->function;
     }
 
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(types[functionDeclaration->function->type]);
-    bool needsInstantiation = false;
-    for (int t : functionTypeObj->parameterTypes) {
-        if (t == TypeId::Unknown) {
-            needsInstantiation = true;
-            break;
-        }
-    }
+    bool needsInstantiation = !functionDeclaration->fixedTypes;
 
-    Compiler *initialCompiler = compiler;
+    Compiler *initialCompiler = this->compiler;
 
     // Save any data that should be reset
     size_t scannerStart = scanner.start;
@@ -405,42 +407,35 @@ ObjFunction *Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclar
     scanner.line = functionDeclaration->blockLine;
     advance();
 
-    ObjFunction *function = nullptr;
-    if (needsInstantiation) {
-        // TODO: Garbage collection
-        auto newFunction = new ObjFunction();
-        Compiler compiler(newFunction, FunctionType::Function, functionDeclaration->compiler->enclosing);
-        this->compiler = &compiler;
-        beginScope();
-        compiler.function->name = functionDeclaration->function->name;
-        compiler.function->arity = functionDeclaration->function->arity;
-        compiler.locals.push_back(Local("", 0)); // Function object
-
-        auto functionType = typecheckFunctionDeclaration(this, newFunction);
-        for (size_t i = 1; i < functionDeclaration->compiler->locals.size(); i++) {
-            compiler.declareVariable(this, functionDeclaration->compiler->locals[i].name);
-            compiler.markInitialized();
-            size_t end = initialCompiler->expressionTypeStack.size();
-            int argumentType = initialCompiler->expressionTypeStack[end - argCount + (i - 1)];
-            typecheckParameter(this, newFunction, functionType, argumentType);
-        }
-
-        auto originalFunctionTypeObj = &mpark::get<FunctionTypeObj>(types[functionDeclaration->function->type]);
-        typecheckFunctionDeclarationReturn(this, newFunction, functionType, originalFunctionTypeObj->returnType);
-
-        block();
-        endCompiler();
-        function = newFunction;
-        typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
-    } else {
-        function = functionDeclaration->function;
-        this->compiler = functionDeclaration->compiler;
-        // Assume compiled so we don't recurse
-        functionDeclaration->compiler->compiled = true;
-        beginScope();
-        block();
-        endCompiler();
+    // TODO: Garbage collection
+    auto newFunction = new ObjFunction();
+    Compiler *compiler = new Compiler(newFunction, FunctionType::Function, functionDeclaration->enclosingCompiler);
+    this->compiler = compiler;
+    compiler->compiled = true;
+    if (!needsInstantiation) {
+        functionDeclaration->compiler = compiler;
+        functionDeclaration->function = newFunction;
     }
+    beginScope();
+    // TODO: Garbage collection
+    compiler->function->name = new ObjString(std::string(functionDeclaration->name));
+    compiler->function->arity = functionDeclaration->parameters.size();
+    compiler->locals.push_back(Local("", 0)); // Function object
+
+    auto functionType = typecheckFunctionDeclaration(this, newFunction);
+    for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
+        compiler->declareVariable(this, functionDeclaration->parameters[i].name);
+        compiler->markInitialized();
+        size_t end = initialCompiler->expressionTypeStack.size();
+        int argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
+        typecheckParameter(this, newFunction, functionType, argumentType);
+    }
+
+    typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
+
+    block();
+    endCompiler();
+    typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
 
     // Reset back
     scanner.start = scannerStart;
@@ -449,7 +444,7 @@ ObjFunction *Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclar
     previous = _previous;
     current = _current;
     this->compiler = initialCompiler;
-    return function;
+    return newFunction;
 }
 
 void Parser::beginScope() {
@@ -711,11 +706,15 @@ void Parser::funDeclaration() {
     consume(TokenType::Identifier, "Expect function name.");
     auto name = previous.text;
     auto function = new ObjFunction();
+    Compiler *enclosingCompiler = compiler;
     Compiler *functionCompiler = new Compiler(function, FunctionType::Function, compiler);
     uint8_t constant = makeConstant(function);
-    int functionType = typecheckFunctionDeclaration(this, function);
-    initCompiler(functionCompiler);
-    beginScope();
+    // int functionType = typecheckFunctionDeclaration(this, function);
+    // initCompiler(functionCompiler);
+    // beginScope();
+
+    std::vector<FunctionParameter> parameters;
+    bool fixedTypes = true;
 
     consume(TokenType::LeftParen, "Expect '(' after function name.");
     if (!check(TokenType::RightParen)) {
@@ -725,14 +724,22 @@ void Parser::funDeclaration() {
                 errorAtCurrent("Can't have more than 255 parameters.");
             }
 
-            uint8_t paramConstant = parseVariable("Expect parameter name.");
+            // uint8_t paramConstant = parseVariable("Expect parameter name.");
+            consume(TokenType::Identifier, "Expect parameter name.");
+            auto parameterName = previous.text;
+
             int argumentType = TypeId::Unknown;
             if (match(TokenType::Colon)) {
                 consume(TokenType::Identifier, "Expect type name after ':'.");
                 argumentType = typeByName(this, previous.text);
             }
-            typecheckParameter(this, function, functionType, argumentType);
-            defineVariable(paramConstant);
+            // typecheckParameter(this, function, functionType, argumentType);
+            // defineVariable(paramConstant);
+
+            parameters.push_back({ parameterName, argumentType });
+            if (argumentType == TypeId::Unknown) {
+                fixedTypes = false;
+            }
         } while (match(TokenType::Comma));
     }
     consume(TokenType::RightParen, "Expect ')' after after parameters.");
@@ -742,11 +749,11 @@ void Parser::funDeclaration() {
         consume(TokenType::Identifier, "Expect type name after ':'.");
         returnType = typeByName(this, previous.text);
     }
-    typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
+    // typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
-    functionCompiler->enclosing->functionDeclarations.push_back(FunctionDeclaration{ 
-        name, function, functionCompiler, constant, scanner.start, scanner.line
+    enclosingCompiler->functionDeclarations.push_back(FunctionDeclaration{ 
+        name, parameters, returnType, fixedTypes, nullptr, nullptr, enclosingCompiler, constant, scanner.start, scanner.line
     });
 
     int braces = 0;
@@ -757,7 +764,7 @@ void Parser::funDeclaration() {
     }
     consume(TokenType::RightBrace, "Expect '}' after block");
 
-    compiler = compiler->enclosing;
+    // compiler = compiler->enclosing;
 }
 
 
@@ -855,7 +862,7 @@ void Parser::or_(ExpressionState es) {
     typecheckOr(this);
 }
 
-uint8_t Parser::argumentList(int functionType) {
+uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
     uint8_t argCount = 0;
     if (!check(TokenType::RightParen)) {
         do {
@@ -863,7 +870,7 @@ uint8_t Parser::argumentList(int functionType) {
             if (argCount == 255) {
                 error("Can't have more than 255 arguments.");
             }
-            typecheckFunctionArgument(this, functionType, argCount);
+            typecheckFunctionArgument(this, functionDeclaration, argCount);
             argCount ++;
         } while (match(TokenType::Comma));
     }
@@ -879,12 +886,12 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     emitByte(OpCode::Constant);
     emitByte(0xFF);
     size_t patchIndex = currentChunk().code.size() - 1;
-    uint8_t argCount = argumentList(function->type);
+    uint8_t argCount = argumentList(functionDeclaration);
     function = maybeCompileFunctionDeclarationInstantiation(functionDeclaration, argCount);
 
     currentChunk().code[patchIndex] = makeConstant(function);
     
-    typecheckEndFunctionCall(this, argCount);
+    typecheckEndFunctionCall(this, function, argCount);
     emitByte(OpCode::Call);
     emitByte(argCount);
 }

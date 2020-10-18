@@ -1,24 +1,24 @@
 {
-//  var apple = 5
-//  var thing = "monkey"
-//  var banana = apple + 2
-//
-//  fun hello(x: number, y: bool, z: string): void {
-//    print("x plus 1 is {}", x)
-//    print("y is {}", y)
-//    print("z is {}", z)
-//  }
-//
-//  fun things(a: number, b: number): number {
-//    if b > 0 {
-//      return things(a + 1, b - 1)
-//    }
-//    return a
-//  }
-//
-//  hello(2, apple < 40, thing)
-//  print("Things are {}", 200 + things(5, 6))
-//
+  var apple = 5
+  var thing = "monkey"
+  var banana = apple + 2
+
+  fun hello(x: number, y: bool, z: string): void {
+    print("x plus 1 is {}", x)
+    print("y is {}", y)
+    print("z is {}", z)
+  }
+
+  fun things(a: number, b: number): number {
+    if b > 0 {
+      return things(a + 1, b - 1)
+    }
+    return a
+  }
+
+  hello(2, apple < 40, thing)
+  print("Things are {}", 200 + things(5, 6))
+
   fun compare(x, y) {
     
     if x == y {
