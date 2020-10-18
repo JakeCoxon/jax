@@ -4,7 +4,8 @@ namespace TypeId {
     int Bool = 2;
     int String = 3;
     int Dynamic = 4;
-    int Function = 5;
+    int Unknown = 5;
+    int Function = 6;
 }
 
 int typeByName(Parser *parser, const std::string_view &name) {
@@ -32,6 +33,9 @@ void typecheckInit(Parser *parser) {
     parser->types.push_back(NumberType{});
     parser->types.push_back(BoolType{});
     parser->types.push_back(StringType{});
+    parser->types.push_back(StringType{}); // Dynamic
+    parser->types.push_back(StringType{}); // Unknown
+    parser->types.push_back(StringType{}); // Function
 }
 
 void typecheckPop(Parser *parser) {
@@ -99,7 +103,7 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
     compiler->expressionTypeStack.pop_back();
 
     auto assertNumbers = [&]() {
-        if (typeA != TypeId::Number && typeB != TypeId::Number) { 
+        if (typeA != TypeId::Number || typeB != TypeId::Number) { 
             parser->error("Operator expects two numbers.");
         }
     };
@@ -172,10 +176,10 @@ void typecheckVariable(Parser *parser, int local) {
 }
 
 
-void typecheckParameter(Parser *parser, ObjFunction *function, int functionType, int type) {
-    parser->compiler->locals.back().type = type;
+void typecheckParameter(Parser *parser, ObjFunction *function, int functionType, int argumentType) {
+    parser->compiler->locals.back().type = argumentType;
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
-    functionTypeObj->parameterTypes.push_back(type);
+    functionTypeObj->parameterTypes.push_back(argumentType);
 }
 
 int typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
@@ -185,30 +189,44 @@ int typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
     return functionType;
 }
 
-void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, int functionType, int type) {
+void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, int functionType, int returnType) {
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     function->type = functionType;
-    functionTypeObj->returnType = type;
+    functionTypeObj->returnType = returnType;
 }
 
 int getFunctionType(Parser *parser) {
     return parser->compiler->expressionTypeStack.back();
 }
 
-void typecheckArgument(Parser *parser, int functionType, int argCount) {
+void typecheckFunctionArgument(Parser *parser, int functionType, int argCount) {
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     int argumentType = parser->compiler->expressionTypeStack.back();
-    typecheckPop(parser);
+    if (functionTypeObj->parameterTypes[argCount] == TypeId::Unknown) {
+        // will be type checked later
+        return;
+    }
     if (functionTypeObj->parameterTypes[argCount] != argumentType) {
         parser->error("Type mismatch");
     }
 }
 
-void typecheckFunctionCall(Parser *parser) {
+void typecheckBeginFunctionCall(Parser *parser, ObjFunction *function) {
+    parser->compiler->expressionTypeStack.push_back(function->type);
+}
+void typecheckEndFunctionCall(Parser *parser, int argCount) {
+    for (int i = 0; i < argCount; i++) {
+        typecheckPop(parser);
+    }
     int functionType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);
+}
+
+void typecheckUpdateFunctionInstantiation(Parser *parser, int functionType, int argCount) {
+    auto &arg = parser->compiler->expressionTypeStack[parser->compiler->expressionTypeStack.size() - 1 - argCount];
+    arg = functionType;
 }
 
 void typecheckReturn(Parser *parser, ObjFunction *function) {
@@ -225,10 +243,6 @@ void typecheckReturnNil(Parser *parser, ObjFunction *function) {
     if (!typecheckIsAssignable(parser, functionTypeObj->returnType, TypeId::Void)) {
         parser->error("Type mismatch");
     }
-}
-
-void typecheckInnerFunction(Parser *parser, InnerFunction *innerFunction) {
-    parser->compiler->expressionTypeStack.push_back(innerFunction->function->type);
 }
 
 struct PrintState {

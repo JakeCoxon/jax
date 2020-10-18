@@ -1,36 +1,53 @@
 {
-  var apple = 5
-  var thing = "monkey"
-  var banana = apple + 2
-
-  fun hello(x: number, y: bool, z: string): void {
-    print("x plus 1 is {}", x)
-    print("y is {}", y)
-    print("z is {}", z)
-  }
-
-  fun things(a: number, b: number): number {
-    if b > 0 {
-      return things(a + 1, b - 1)
+//  var apple = 5
+//  var thing = "monkey"
+//  var banana = apple + 2
+//
+//  fun hello(x: number, y: bool, z: string): void {
+//    print("x plus 1 is {}", x)
+//    print("y is {}", y)
+//    print("z is {}", z)
+//  }
+//
+//  fun things(a: number, b: number): number {
+//    if b > 0 {
+//      return things(a + 1, b - 1)
+//    }
+//    return a
+//  }
+//
+//  hello(2, apple < 40, thing)
+//  print("Things are {}", 200 + things(5, 6))
+//
+  fun compare(x, y) {
+    
+    if x == y {
+      print("{} is equal to {}", x, y)
     }
-    return a
   }
+  compare("hello", "jello")
+  compare(5, 5)
 
-  hello(2, apple < 40, thing)
-  print("Things are {}", 200 + things(5, 6))
+//  fun xxx(y) {
+//    if true {
+//      return
+//    }
+//    xxx(y - 1)
+//  }
+//  xxx(1)
 
-  if apple < 0 {
-    print("Banana is {}", banana)
-  }
-
-  while banana > 0 {
-    banana = banana - 1
-    print("Banana is {}", banana)
-  }
-
-  var dyn: dynamic = "thing"
-  print("Dyn is {}", dyn)
-  dyn = 200
-  print("Dyn is {}", dyn)
+//  if apple < 0 {
+//    print("Banana is {}", banana)
+//  }
+//
+//  while banana > 0 {
+//    banana = banana - 1
+//    print("Banana is {}", banana)
+//  }
+//
+//  var dyn: dynamic = "thing"
+//  print("Dyn is {}", dyn)
+//  dyn = 200
+//  print("Dyn is {}", dyn)
 
 }

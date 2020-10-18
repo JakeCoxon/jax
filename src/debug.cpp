@@ -77,7 +77,7 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
         case OpCode::Negate:
             return simpleInstruction(chunk, "Negate", offset);
         case OpCode::Print:
-            return simpleInstruction(chunk, "Print", offset);
+            return byteInstruction(chunk, "Print", offset);
         case OpCode::Jump:
             return jumpInstruction(chunk, "Jump", 1, offset);
         case OpCode::JumpIfFalse:

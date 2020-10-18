@@ -2,8 +2,8 @@
 #include <string>
 #include <unordered_map>
 
-// #define DEBUG_PRINT_CODE
-// #define DEBUG_TRACE_EXECUTION
+#define DEBUG_PRINT_CODE
+#define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
 
@@ -327,7 +327,6 @@ void VM::printOperation(int argCount) {
     int numArg = 0;
     for (size_t i = 0; i < string.text.size(); i++) {
         if (string.text[i] == '{' && i < string.text.size()) {
-            i ++;
             i ++;
             std::cout << peek(argCount - 2 - numArg);
             numArg++;

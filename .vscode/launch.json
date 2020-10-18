@@ -4,6 +4,7 @@
   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
+
     {
       "name": "(lldb) Launch",
       "type": "cppdbg",
@@ -15,6 +16,13 @@
       "environment": [],
       "externalConsole": false,
       "MIMode": "lldb"
+    },
+    {
+        "name": "CodeLLDB Launch",
+        "type": "lldb",
+        "request": "launch",
+        "program": "${workspaceFolder}/jax",
+        "args": ["test.jax"],
     }
   ]
 }
