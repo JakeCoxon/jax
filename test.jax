@@ -1,4 +1,5 @@
 {
+  var start = clock()
   var apple = 5
   var thing = "monkey"
   var banana = apple + 2
@@ -36,18 +37,28 @@
   }
   xxx(1)
 
-//  if apple < 0 {
-//    print("Banana is {}", banana)
-//  }
-//
-//  while banana > 0 {
-//    banana = banana - 1
-//    print("Banana is {}", banana)
-//  }
-//
-//  var dyn: dynamic = "thing"
-//  print("Dyn is {}", dyn)
-//  dyn = 200
-//  print("Dyn is {}", dyn)
+  fun fib(n): number {
+    if n < 2 {
+      return n
+    }
+    return fib(n - 2) + fib(n - 1);
+  }
 
+  if apple < 0 {
+    print("Banana is {}", banana)
+  }
+
+  while banana > 0 {
+    banana = banana - 1
+    print("Banana is {}", banana)
+  }
+
+  var dyn: dynamic = "thing"
+  print("Dyn is {}", dyn)
+  dyn = 200
+  print("Dyn is {}", dyn)
+
+  print("{}", fib(3))
+
+  print("time was {}", clock() - start)
 }

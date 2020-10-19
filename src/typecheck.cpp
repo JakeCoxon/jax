@@ -213,11 +213,18 @@ void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDecl
 void typecheckBeginFunctionCall(Parser *parser, ObjFunction *function) {
     parser->compiler->expressionTypeStack.push_back(0);
 }
-void typecheckEndFunctionCall(Parser *parser, ObjFunction *function, int argCount) {
+void typecheckEndFunctionCall(Parser *parser, Value function, int argCount) {
     for (int i = 0; i < argCount; i++) {
         typecheckPop(parser);
     }
-    int functionType = function->type;
+    int functionType = function.visit(overloaded {
+        [&](ObjFunction *f) -> int { return f->type; },
+        [&](ObjNative *f) -> int { return f->type; },
+        [&](auto value) -> int {
+            parser->error("Invalid function type.");
+            return 0;
+        }
+    });
     parser->compiler->expressionTypeStack.pop_back();
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);

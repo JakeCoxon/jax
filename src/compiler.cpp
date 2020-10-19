@@ -39,7 +39,7 @@ struct FunctionParameter {
 
 struct FunctionInstantiation {
     int type;
-    ObjFunction *function = nullptr;
+    Value function = mpark::monostate();
     Compiler *compiler = nullptr;
 };
 
@@ -126,7 +126,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    ObjFunction *maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
+    Value maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
     void beginScope();
     void endScope();
 
@@ -191,12 +191,33 @@ struct ParseRule {
 
 static ParseRule &getRule(TokenType type);
 
+void registry(Parser *parser);
+
+void registerNative(
+        Parser *parser, std::string name, int returnType,
+        std::vector<int> parameterTypes, NativeFn nativeFn) {
+    FunctionTypeObj type{};
+    type.returnType = returnType;
+    parser->types.push_back(type);
+    int typeId = parser->types.size() - 1;
+
+    auto native = new ObjNative{typeId, nativeFn};
+    auto inst = FunctionInstantiation{typeId, native};
+    parser->compiler->functionDeclarations.push_back({
+        "clock", {}, returnType, false, nullptr, {inst}, 0, 0, 0
+    });
+}
+
 ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     Compiler compiler(function, FunctionType::Script, nullptr);
     Parser parser { scanner, &compiler };
     typecheckInit(&parser);
+
+    registry(&parser);
+
+
     parser.advance();
 
     while (!parser.match(TokenType::EOF_)) {
@@ -393,7 +414,7 @@ ObjFunction *Parser::endCompiler() {
 }
 
 
-ObjFunction *Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
+Value Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
     Compiler *initialCompiler = this->compiler;
 
     // slow as hell
@@ -901,14 +922,14 @@ uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
 
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
-    ObjFunction *function = nullptr;
-    typecheckBeginFunctionCall(this, function);
+    
+    typecheckBeginFunctionCall(this, nullptr);
 
     emitByte(OpCode::Constant);
     emitByte(0xFF);
     size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
-    function = maybeCompileFunctionDeclarationInstantiation(functionDeclaration, argCount);
+    Value function = maybeCompileFunctionDeclarationInstantiation(functionDeclaration, argCount);
 
     currentChunk().code[patchIndex] = makeConstant(function);
     

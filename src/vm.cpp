@@ -59,6 +59,8 @@ struct Chunk {
     }
 };
 
+struct VM;
+
 struct ObjFunction: Obj {
     int arity = 0;
     Chunk chunk {};
@@ -66,6 +68,14 @@ struct ObjFunction: Obj {
     int type = -1;
 
     ObjFunction() {}
+};
+
+using NativeFn = std::function<Value(VM *vm, int argCount, Value *args)>;
+
+struct ObjNative: Obj {
+    int type;
+    NativeFn function;
+    ObjNative(int type, NativeFn function): type(type), function(function) {}
 };
 
 struct CallFrame {
@@ -80,6 +90,7 @@ enum class InterpretResult {
     RuntimeError,
 };
 
+struct Parser;
 int disassembleInstruction(const Chunk &chunk, int offset);
 ObjFunction *compile(const std::string &source); // compiler.cpp
 
@@ -111,8 +122,6 @@ struct VM {
 
     
 };
-
-
 
 InterpretResult VM::interpret(const std::string &source) {
     ObjFunction *function = compile(source);
@@ -314,6 +323,12 @@ bool VM::callValue(Value callee, int argCount) {
         [&](ObjFunction *function) -> bool {
             return beginCall(function, argCount);
         },
+        [&](ObjNative *native) -> bool {
+            Value result = native->function(this, argCount, &stack[stack.size() - argCount]);
+            pop();
+            push(result);
+            return true;
+        },
         [&](auto value) -> bool {
             runtimeError() << "Cannot call value: " << value << std::endl;
             return false;
@@ -411,6 +426,7 @@ struct OutputVisitor {
             os << "<script>";
         else os << "<fn " << f->name->text << ">";
     }
+    void operator()(ObjNative *f) { os << "<native>"; }
 
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };
@@ -430,6 +446,7 @@ struct ToStringVisitor {
             return "<script>";
         return "<fn " + f->name->text + ">";
     }
+    std::string operator()(ObjNative *f) { return "<native>"; }
 
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };
@@ -445,6 +462,7 @@ struct IsFalseyVisitor {
     bool operator()(bool b) { return !b; }
     bool operator()(ObjString *s) { return false; }
     bool operator()(ObjFunction *f) { return false; }
+    bool operator()(ObjNative *f) { return false; }
 
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };

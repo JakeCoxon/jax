@@ -7,6 +7,7 @@
 #include "vm.cpp"
 #include "debug.cpp"
 #include "compiler.cpp"
+#include "natives.cpp"
 
 std::string readFile(const std::string &path) {
     // http://insanecoding.blogspot.com/2011/11/how-to-read-in-file-in-c.html
