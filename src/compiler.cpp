@@ -50,7 +50,6 @@ struct FunctionDeclaration {
     bool polymorphic;
 
     Compiler *enclosingCompiler;
-    FunctionInstantiation main;
     std::vector<FunctionInstantiation> overloads;
     
     size_t constant;
@@ -395,27 +394,22 @@ ObjFunction *Parser::endCompiler() {
 
 
 ObjFunction *Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
-    if (functionDeclaration->main.compiler && functionDeclaration->main.compiler->compiled) {
-        return functionDeclaration->main.function;
-    }
     Compiler *initialCompiler = this->compiler;
 
-    if (functionDeclaration->polymorphic) {
+    // slow as hell
+    for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
+        auto inst = &functionDeclaration->overloads[j];
+        auto functionTypeObj = &mpark::get<FunctionTypeObj>(types[inst->type]);
 
-        for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
-            auto inst = &functionDeclaration->overloads[j];
-            auto functionTypeObj = &mpark::get<FunctionTypeObj>(types[inst->type]);
-
-            bool isMatched = true;
-            for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-                size_t end = initialCompiler->expressionTypeStack.size();
-                int argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
-                if (functionTypeObj->parameterTypes[i] != argumentType) {
-                    isMatched = false; break;
-                }
+        bool isMatched = true;
+        for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
+            size_t end = initialCompiler->expressionTypeStack.size();
+            int argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
+            if (functionTypeObj->parameterTypes[i] != argumentType) {
+                isMatched = false; break;
             }
-            if (isMatched) return inst->function;
         }
+        if (isMatched) return inst->function;
     }
 
 
@@ -439,15 +433,10 @@ ObjFunction *Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclar
     this->compiler = compiler;
     compiler->compiled = true;
 
-    if (functionDeclaration->polymorphic) {
-        functionDeclaration->overloads.push_back({
-            functionType, newFunction, compiler
-        });
-    } else {
-        functionDeclaration->main.compiler = compiler;
-        functionDeclaration->main.function = newFunction;
-        functionDeclaration->main.type = functionType;
-    }
+    functionDeclaration->overloads.push_back({
+        functionType, newFunction, compiler
+    });
+
     beginScope();
     // TODO: Garbage collection
     compiler->function->name = new ObjString(std::string(functionDeclaration->name));
@@ -785,7 +774,7 @@ void Parser::funDeclaration() {
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
     enclosingCompiler->functionDeclarations.push_back(FunctionDeclaration{ 
-        name, parameters, returnType, polymorphic, enclosingCompiler, { }, {  }, constant, scanner.start, scanner.line
+        name, parameters, returnType, polymorphic, enclosingCompiler, {}, constant, scanner.start, scanner.line
     });
 
     int braces = 0;
@@ -912,7 +901,7 @@ uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
 
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
-    ObjFunction *function = functionDeclaration->main.function;
+    ObjFunction *function = nullptr;
     typecheckBeginFunctionCall(this, function);
 
     emitByte(OpCode::Constant);
