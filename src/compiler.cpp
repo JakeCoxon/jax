@@ -98,7 +98,7 @@ using Type = mpark::variant<
 struct Parser {
     Token current;
     Token previous;
-    Scanner &scanner;
+    Scanner *scanner;
     Compiler *compiler;
 
     std::vector<Type> types;
@@ -106,7 +106,7 @@ struct Parser {
     bool hadError = false;
     bool panicMode = false;
 
-    Parser(Scanner &scanner, Compiler *compiler):
+    Parser(Scanner *scanner, Compiler *compiler):
             scanner(scanner), compiler(compiler) {
         initCompiler(compiler);
     };
@@ -126,7 +126,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    Value maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
+    Value maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
     void beginScope();
     void endScope();
 
@@ -212,7 +212,7 @@ ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     Compiler compiler(function, FunctionType::Script, nullptr);
-    Parser parser { scanner, &compiler };
+    Parser parser { &scanner, &compiler };
     typecheckInit(&parser);
 
     registry(&parser);
@@ -282,7 +282,7 @@ void Compiler::markInitialized() {
 void Parser::advance() {
     previous = current;
     while (true) {
-        current = scanner.scanToken();
+        current = scanner->scanToken();
         if (current.type == TokenType::Error) {
             errorAtCurrent(std::string(current.text));
             continue;
@@ -338,12 +338,12 @@ void Parser::errorAt(Token &token, const std::string &message) {
         // the token is on and then print the line
         std::cerr << std::endl;
         size_t cursor = token.start;
-        while (cursor == 1 || (cursor > 1 && scanner.source[cursor - 1] != '\n')) {
+        while (cursor == 1 || (cursor > 1 && scanner->source[cursor - 1] != '\n')) {
             cursor--;
         }
         size_t offsetInLine = token.start - cursor;
-        while (cursor < scanner.source.size()  && scanner.source[cursor] != '\n') {
-            std::cerr << scanner.source[cursor];
+        while (cursor < scanner->source.size()  && scanner->source[cursor] != '\n') {
+            std::cerr << scanner->source[cursor];
             cursor++;
         }
         std::cerr << std::endl;
@@ -414,8 +414,9 @@ ObjFunction *Parser::endCompiler() {
 }
 
 
-Value Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
+Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
     Compiler *initialCompiler = this->compiler;
+    Scanner *initialScanner = this->scanner;
 
     // slow as hell
     for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
@@ -433,19 +434,16 @@ Value Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *
         if (isMatched) return inst->function;
     }
 
-
-    // Save any data that should be reset
-    size_t scannerStart = scanner.start;
-    size_t scannerCurrent = scanner.current;
-    int scannerLine = scanner.line;
-    int parens = scanner.parens;
+    Scanner tempScanner { initialScanner->source };
+    scanner = &tempScanner;
+    
     Token _previous = previous;
     Token _current = current;
-    
-    scanner.current = functionDeclaration->blockStart;
-    scanner.start = functionDeclaration->blockStart;
-    scanner.line = functionDeclaration->blockLine;
-    scanner.parens = 0;
+
+    scanner->current = functionDeclaration->blockStart;
+    scanner->start = functionDeclaration->blockStart;
+    scanner->line = functionDeclaration->blockLine;
+    scanner->parens = 0;
     advance();
 
     // TODO: Garbage collection
@@ -482,12 +480,9 @@ Value Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *
     typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
 
     // Reset back
-    scanner.start = scannerStart;
-    scanner.current = scannerCurrent;
-    scanner.line = scannerLine;
-    scanner.parens = parens;
     previous = _previous;
     current = _current;
+    this->scanner = initialScanner;
     this->compiler = initialCompiler;
     return newFunction;
 }
@@ -798,7 +793,7 @@ void Parser::funDeclaration() {
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
     enclosingCompiler->functionDeclarations.push_back(FunctionDeclaration{ 
-        name, parameters, returnType, polymorphic, enclosingCompiler, {}, constant, scanner.start, scanner.line
+        name, parameters, returnType, polymorphic, enclosingCompiler, {}, constant, scanner->start, scanner->line
     });
 
     int braces = 0;
@@ -932,7 +927,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     emitByte(0xFF);
     size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
-    Value function = maybeCompileFunctionDeclarationInstantiation(functionDeclaration, argCount);
+    Value function = maybeCompileFunctionInstantiation(functionDeclaration, argCount);
 
     currentChunk().code[patchIndex] = makeConstant(function);
     
