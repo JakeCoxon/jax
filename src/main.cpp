@@ -58,7 +58,7 @@ int main(int argc, const char* argv[]) {
     } else if (argc == 2) {
         runFile(vm, argv[1]);
     } else {
-        std::cerr << "Usage: mylang [path]" << std::endl;
+        std::cerr << "Usage: jax [path]" << std::endl;
         exit(64);
     }
 

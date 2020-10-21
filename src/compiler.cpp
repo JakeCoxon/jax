@@ -438,12 +438,14 @@ Value Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *
     size_t scannerStart = scanner.start;
     size_t scannerCurrent = scanner.current;
     int scannerLine = scanner.line;
+    int parens = scanner.parens;
     Token _previous = previous;
     Token _current = current;
     
     scanner.current = functionDeclaration->blockStart;
     scanner.start = functionDeclaration->blockStart;
     scanner.line = functionDeclaration->blockLine;
+    scanner.parens = 0;
     advance();
 
     // TODO: Garbage collection
@@ -483,6 +485,7 @@ Value Parser::maybeCompileFunctionDeclarationInstantiation(FunctionDeclaration *
     scanner.start = scannerStart;
     scanner.current = scannerCurrent;
     scanner.line = scannerLine;
+    scanner.parens = parens;
     previous = _previous;
     current = _current;
     this->compiler = initialCompiler;
