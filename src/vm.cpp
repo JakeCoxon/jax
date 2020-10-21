@@ -78,6 +78,11 @@ struct ObjNative: Obj {
     ObjNative(int type, NativeFn function): type(type), function(function) {}
 };
 
+struct ObjResource: Obj {
+    void *pointer;
+    ObjResource(void *pointer): pointer(pointer) {}
+};
+
 struct CallFrame {
     ObjFunction *function;
     size_t ip;
@@ -325,6 +330,7 @@ bool VM::callValue(Value callee, int argCount) {
         },
         [&](ObjNative *native) -> bool {
             Value result = native->function(this, argCount, &stack[stack.size() - argCount]);
+            for (int i = 0; i < argCount; i++) { pop(); }
             pop();
             push(result);
             return true;
@@ -427,6 +433,7 @@ struct OutputVisitor {
         else os << "<fn " << f->name->text << ">";
     }
     void operator()(ObjNative *f) { os << "<native>"; }
+    void operator()(ObjResource *r) { os << "<resource>"; }
 
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };
@@ -447,6 +454,7 @@ struct ToStringVisitor {
         return "<fn " + f->name->text + ">";
     }
     std::string operator()(ObjNative *f) { return "<native>"; }
+    std::string operator()(ObjResource *r) { return "<resource>"; }
 
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };
@@ -463,6 +471,7 @@ struct IsFalseyVisitor {
     bool operator()(ObjString *s) { return false; }
     bool operator()(ObjFunction *f) { return false; }
     bool operator()(ObjNative *f) { return false; }
+    bool operator()(ObjResource *r) { return false; }
 
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };

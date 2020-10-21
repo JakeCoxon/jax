@@ -84,15 +84,15 @@ struct ExpressionState {
     bool canAssign;
 };
 
-struct NumberType {};
-struct BoolType {};
-struct StringType {};
+struct GenericType {
+    std::string name;
+};
 struct FunctionTypeObj {
     std::vector<int> parameterTypes;
     int returnType = -1;
 };
 using Type = mpark::variant<
-    mpark::monostate, NumberType, BoolType, StringType, FunctionTypeObj
+    GenericType, FunctionTypeObj
 >;
 
 struct Parser {
@@ -195,16 +195,22 @@ void registry(Parser *parser);
 
 void registerNative(
         Parser *parser, std::string name, int returnType,
-        std::vector<int> parameterTypes, NativeFn nativeFn) {
+        std::vector<FunctionParameter> parameters, NativeFn nativeFn) {
     FunctionTypeObj type{};
+    for (size_t i = 0; i < parameters.size(); i++) {
+        type.parameterTypes.push_back(parameters[i].type);
+    }
     type.returnType = returnType;
     parser->types.push_back(type);
     int typeId = parser->types.size() - 1;
 
+    // TODO: garbage collection
     auto native = new ObjNative{typeId, nativeFn};
+    // TODO: garbage collection
+    auto functionName = new ObjString{name};
     auto inst = FunctionInstantiation{typeId, native};
     parser->compiler->functionDeclarations.push_back({
-        "clock", {}, returnType, false, nullptr, {inst}, 0, 0, 0
+        functionName->text, parameters, returnType, false, nullptr, {inst}, 0, 0, 0
     });
 }
 
@@ -427,7 +433,7 @@ Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDec
         for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
             size_t end = initialCompiler->expressionTypeStack.size();
             int argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
-            if (functionTypeObj->parameterTypes[i] != argumentType) {
+            if (!typecheckIsAssignable(this, functionTypeObj->parameterTypes[i], argumentType)) {
                 isMatched = false; break;
             }
         }

@@ -28,14 +28,19 @@ int typeByName(Parser *parser, const std::string_view &name) {
     return type;
 }
 
+int addNewType(Parser *parser, GenericType genericType) {
+    parser->types.push_back(genericType);
+    return parser->types.size() - 1;
+}
+
 void typecheckInit(Parser *parser) {
-    parser->types.push_back(mpark::monostate());
-    parser->types.push_back(NumberType{});
-    parser->types.push_back(BoolType{});
-    parser->types.push_back(StringType{});
-    parser->types.push_back(StringType{}); // Dynamic
-    parser->types.push_back(StringType{}); // Unknown
-    parser->types.push_back(StringType{}); // Function
+    parser->types.push_back(GenericType{"void"}); // Void
+    parser->types.push_back(GenericType{"number"}); // Number
+    parser->types.push_back(GenericType{"bool"}); // Bool
+    parser->types.push_back(GenericType{"string"}); // String
+    parser->types.push_back(GenericType{"dynamic"}); // Dynamic
+    parser->types.push_back(GenericType{"unknown"}); // Unknown
+    parser->types.push_back(GenericType{"function"}); // Function placeholder
 }
 
 void typecheckPop(Parser *parser) {
@@ -205,7 +210,7 @@ void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDecl
         // will be type checked later
         return;
     }
-    if (functionDeclaration->parameters[argIndex].type != argumentType) {
+    if (!typecheckIsAssignable(parser, functionDeclaration->parameters[argIndex].type, argumentType)) {
         parser->error("Type mismatch");
     }
 }

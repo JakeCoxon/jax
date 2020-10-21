@@ -60,5 +60,24 @@
 
   print("{}", fib(3))
 
+  {
+    var x = array()
+    print("size of {} is {}", x, size(x))
+
+    add(x, "hello")
+    add(x, "this")
+    add(x, "is")
+    add(x, "a")
+    add(x, "test")
+    print("size of {} is {}", x, size(x))
+
+    var i = 0
+    while i < size(x) {
+      print("index {} is {}", i, get(x, i))
+      i = i + 1
+    }
+
+  }
+
   print("time was {}", clock() - start)
 }
