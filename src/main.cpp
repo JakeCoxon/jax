@@ -1,3 +1,4 @@
+
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -39,10 +40,10 @@ static void repl(VM &vm) {
     std::string line;
 
     while (true) {
-        std::cout << "> ";
+        tfm::printf("> ");
 
         if (!getline(std::cin, line)) {
-            std::cout << std::endl;
+            tfm::printf("\n");
             break;
         }
 

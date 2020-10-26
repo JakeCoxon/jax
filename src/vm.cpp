@@ -1,11 +1,12 @@
+#include <tinyformat.hpp>
 #include <vector>
 #include <array>
 #include <string>
 #include <iterator>
 #include <unordered_map>
 
-//#define DEBUG_PRINT_CODE
-//#define DEBUG_TRACE_EXECUTION
+#define DEBUG_PRINT_CODE
+#define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
 
@@ -111,7 +112,8 @@ struct VM {
     void binaryOperation(OpCode instruction);
     void unaryOperation(OpCode instruction);
 
-    std::ostream &runtimeError();
+    template<typename... Args>
+    void runtimeError(const char* formatString, const Args&... args);
 
     void resetStack() { stack.clear(); };
     void push(Value value) { stack.push_back(value); }
@@ -138,22 +140,23 @@ InterpretResult VM::interpret(const std::string &source) {
     return result;
 }
 
-std::ostream &VM::runtimeError() {
+template<typename... Args>
+void VM::runtimeError(const char* formatString, const Args&... args) {
     for (size_t i = 0; i < frames.size(); i++) {
         CallFrame *frame = &frames[i];
         ObjFunction *function = frame->function;
         // -1 because the IP is sitting on the next instruction to be
         // executed.
         size_t instruction = frame->ip - 1;
-        fprintf(stderr, "[line %d] in ", function->chunk.lines[instruction]);
+        tfm::format(std::cerr, "[line %d] in ", function->chunk.lines[instruction]);
         if (function->name == NULL) {
-            fprintf(stderr, "script\n");
+            tfm::format(std::cerr, "script\n");
         } else {
-            fprintf(stderr, "%s()\n", function->name->text.c_str());
+            tfm::format(std::cerr, "%s()\n", function->name->text);
         }
     }
+    tfm::format(std::cerr, formatString, args...);
     resetStack();
-    return std::cerr;
 }
 
 InterpretResult VM::run() {
@@ -176,13 +179,11 @@ InterpretResult VM::run() {
 
     while (true) {
 #ifdef DEBUG_TRACE_EXECUTION
-        std::cout << "          ";
+        tfm::printf("          ");
         for (auto value: stack) {
-            std::cout << "[ ";
-            std::cout << value;
-            std::cout << " ]";
+            tfm::printf("[ %s ]", value);
         }
-        std::cout << std::endl;
+        tfm::printf("\n");
         disassembleInstruction(frame->function->chunk, frame->ip);
 #endif
 
@@ -277,13 +278,12 @@ ObjString *VM::allocateString(std::string text) {
 
 bool VM::beginCall(ObjFunction* function, int argCount) {
     if (argCount != function->arity) {
-        runtimeError() << "Expected " << function->arity << 
-            " arguments but got " << argCount << "." << std::endl;
+        runtimeError("Expected %i arguments but got %i\n", function->arity, argCount);
         return false;
     }
 
     if (frames.size() == FRAMES_MAX) {
-        runtimeError() << "Stack overflow." << std::endl;
+        runtimeError("Stack overflow.\n");
         return false;
     }
     frames.push_back(CallFrame {
@@ -307,7 +307,7 @@ bool VM::callValue(Value callee, int argCount) {
             return true;
         },
         [&](auto value) -> bool {
-            runtimeError() << "Cannot call value: " << value << std::endl;
+            runtimeError("Cannot call value: %s\n", value);
             return false;
         }
     });
@@ -320,13 +320,13 @@ void VM::printOperation(int argCount) {
     for (size_t i = 0; i < string.text.size(); i++) {
         if (string.text[i] == '{' && i < string.text.size()) {
             i ++;
-            std::cout << peek(argCount - 2 - numArg);
+            tfm::printf("%s", peek(argCount - 2 - numArg));
             numArg++;
         } else {
-            std::cout << string.text[i];
+            tfm::printf("%s", string.text[i]);
         }
     }
-    std::cout << std::endl;
+    tfm::printf("\n");
     for (int i = 0; i < argCount; i++) {
         pop();
     }
@@ -366,7 +366,7 @@ void VM::binaryOperation(OpCode instruction) {
             }
         }
 
-        runtimeError() << "Invalid operands for operator." << std::endl;
+        runtimeError("Invalid operands for operator.\n");
         return Value::Nil();
     }, a.variant, b.variant, instruction);
 
@@ -382,7 +382,7 @@ void VM::unaryOperation(OpCode instruction) {
             break;
         case OpCode::Negate: {
             if (!peek(0).isNumber()) {
-                runtimeError() << "Operand must be a number." << std::endl;
+                runtimeError("Operand must be a number.\n");
                 return;
             }
             push(-pop().asNumber());
@@ -409,29 +409,13 @@ struct OutputVisitor {
     template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
 };
 
-inline std::ostream &operator<<(std::ostream &os, const Value &v) {
+std::ostream &operator<<(std::ostream &os, const Value &v) {
     v.visit(OutputVisitor { os });
     return os;
 }
 
-struct ToStringVisitor {
-    std::string operator()(mpark::monostate n) { return "nil"; }
-    std::string operator()(double d) { return std::to_string(d); }
-    std::string operator()(bool b) { return (b ? "true" : "false"); }
-    std::string operator()(ObjString *s) { return s->text; }
-    std::string operator()(ObjFunction *f) { 
-        if (!f->name)
-            return "<script>";
-        return "<fn " + f->name->text + ">";
-    }
-    std::string operator()(ObjNative *f) { return "<native>"; }
-    std::string operator()(ObjResource *r) { return "<resource>"; }
-
-    template <typename T> bool operator()(T b) = delete; // Catch non-explicit conversions
-};
-
-std::string toString(const Value &value) {
-    return value.visit(ToStringVisitor());
+std::string Value::toString() {
+    return tfm::format("%s", *this);
 }
 
 

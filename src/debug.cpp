@@ -1,39 +1,37 @@
 
 static int simpleInstruction(const Chunk &chunk, const char* name, int offset) {
-    std::cout << name << std::endl;
+    tfm::printf("%s\n", name);
     return offset + 1;
 }
 
 static int byteInstruction(const Chunk &chunk, const char* name, int offset) {
     uint8_t slot = chunk.code[offset + 1];
-    printf("%-16s %4d\n", name, slot);
+    tfm::printf("%-16s %4d\n", name, slot);
     return offset + 2; 
 }
 
 static int jumpInstruction(const Chunk &chunk, const char* name, int sign, int offset) {
     uint16_t jump = (uint16_t)(chunk.code[offset + 1] << 8);
     jump |= chunk.code[offset + 2];
-    printf("%-16s %4d -> %d\n", name, offset,
+    tfm::printf("%-16s %4d -> %d\n", name, offset,
             offset + 3 + sign * jump);
     return offset + 3;
 }
 
 static int constantInstruction(const Chunk &chunk, const char* name, int offset) {
     uint8_t constant = chunk.code[offset + 1];
-    printf("%-16s %4d '", name, constant);
-    std::cout << chunk.constants[constant];
-    printf("'\n");
+    tfm::printf("%-16s %4d '%s'\n", name, constant, chunk.constants[constant]);
     return offset + 2;
 }
 
 
 int disassembleInstruction(const Chunk &chunk, int offset) {
-    printf("%04d ", offset);
+    tfm::printf("%04d ", offset);
 
     if (offset > 0 && chunk.lines[offset] == chunk.lines[offset - 1]) {
-        printf("   | ");
+        tfm::printf("   | ");
     } else {
-        printf("%4d ", chunk.lines[offset]);
+        tfm::printf("%4d ", chunk.lines[offset]);
     }
 
     auto instruction = OpCode(chunk.code[offset]);
@@ -86,7 +84,7 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
 }
 
 void disassembleChunk(const Chunk &chunk, const std::string &name) {
-    printf("== %s ==\n", name.c_str());
+    tfm::printf("== %s ==\n", name);
 
     for (unsigned long offset = 0; offset < chunk.code.size();) {
         offset = disassembleInstruction(chunk, offset);

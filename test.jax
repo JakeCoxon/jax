@@ -17,7 +17,7 @@ fun things(a: number, b: number): number {
 }
 
 hello(2, apple < 40, thing)
-print("Things are {}", 200 + things(5, 6))
+//print("Things are {}", 200 + things(5, 6))
 
 fun compare(x, y) {
   
@@ -58,7 +58,8 @@ dyn = 200
 print("Dyn is {}", dyn)
 
 //print("{}", fib(35) == 9227465)
-print("{}", fib(3))
+//print("{}", fib(3))
+
 
 {
   var x = array()

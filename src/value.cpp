@@ -12,8 +12,7 @@ struct ObjFunction;
 struct ObjNative;
 struct ObjResource;
 struct Value;
-std::string toString(const Value &value);
-inline std::ostream &operator<<(std::ostream &os, const Value &v);
+std::ostream &operator<<(std::ostream &os, const Value &v);
 
 struct Value {
     using VariantType = mpark::variant<
@@ -43,7 +42,8 @@ struct Value {
     template<class T> inline auto visit(T visitor) { return rollbear::visit(visitor, variant); }
     template<class T> inline auto visit(T visitor) const { return rollbear::visit(visitor, variant); }
 
-    // inline std::string toString() const;
+    std::string toString();
+
     inline bool isFalsey() const;
     bool operator==(Value &rhs) const;
 
