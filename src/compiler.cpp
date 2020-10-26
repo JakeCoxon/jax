@@ -119,9 +119,7 @@ struct Parser {
     void errorAt(Token &token, const std::string &message);
     uint8_t makeConstant(Value value);
     void parsePrecedence(Precedence precedence);
-    uint8_t parseVariable(const std::string &errorMessage);
-    void defineVariable(uint8_t global);
-    void markInitialized();
+    void parseVariable(const std::string &errorMessage);
     uint8_t identifierConstant(const std::string_view &name);
     void synchronize();
     void initCompiler(Compiler *compiler);
@@ -262,8 +260,6 @@ FunctionDeclaration *Compiler::resolveFunctionDeclaration(const std::string_view
 }
 
 void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
-    if (scopeDepth == 0) return;
-
     for (int i = locals.size() - 1; i >= 0; i--) {
         Local* local = &locals[i];
         if (local->depth != -1 && local->depth < scopeDepth) {
@@ -281,7 +277,6 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
 }
 
 void Compiler::markInitialized() {
-    if (scopeDepth == 0) return;
     locals.back().depth = scopeDepth;
 }
 
@@ -572,19 +567,9 @@ void Parser::parsePrecedence(Precedence precedence) {
 }
 
 
-uint8_t Parser::parseVariable(const std::string &errorMessage) {
+void Parser::parseVariable(const std::string &errorMessage) {
     consume(TokenType::Identifier, errorMessage);
     compiler->declareVariable(this, previous.text);
-    if (compiler->scopeDepth > 0) return 0;
-    return identifierConstant(previous.text);
-}
-
-void Parser::defineVariable(uint8_t global) {
-    if (compiler->scopeDepth > 0) {
-        compiler->markInitialized();
-        return;
-    }
-    emitByte(OpCode::DefineGlobal); emitByte(global);
 }
 
 uint8_t Parser::identifierConstant(const std::string_view &name) {
@@ -716,7 +701,7 @@ void Parser::whileStatement() {
 }
 
 void Parser::varDeclaration() {
-    uint8_t global = parseVariable("Expect variable name.");
+    parseVariable("Expect variable name.");
 
     int type = -1;
     if (match(TokenType::Colon)) {
@@ -732,7 +717,7 @@ void Parser::varDeclaration() {
         typecheckNil(this, type);
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
-    defineVariable(global);
+    compiler->markInitialized();
 }
 
 void Parser::expression() {
@@ -770,7 +755,6 @@ void Parser::funDeclaration() {
                 errorAtCurrent("Can't have more than 255 parameters.");
             }
 
-            // uint8_t paramConstant = parseVariable("Expect parameter name.");
             consume(TokenType::Identifier, "Expect parameter name.");
             auto parameterName = previous.text;
 
@@ -780,7 +764,6 @@ void Parser::funDeclaration() {
                 argumentType = typeByName(this, previous.text);
             }
             // typecheckParameter(this, function, functionType, argumentType);
-            // defineVariable(paramConstant);
 
             parameters.push_back({ parameterName, argumentType });
             if (argumentType == TypeId::Unknown) {

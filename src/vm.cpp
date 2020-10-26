@@ -1,9 +1,11 @@
 #include <vector>
+#include <array>
 #include <string>
+#include <iterator>
 #include <unordered_map>
 
-#define DEBUG_PRINT_CODE
-#define DEBUG_TRACE_EXECUTION
+//#define DEBUG_PRINT_CODE
+//#define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
 
@@ -17,9 +19,6 @@ enum class OpCode: uint8_t {
     True,
     False,
     Pop,
-    DefineGlobal,
-    GetGlobal,
-    SetGlobal,
     GetLocal,
     SetLocal,
     Equal,
@@ -101,9 +100,7 @@ ObjFunction *compile(const std::string &source); // compiler.cpp
 
 struct VM {
     std::vector<CallFrame> frames;
-
     std::vector<Value> stack;
-    std::unordered_map<std::string, Value> globals;
 
     InterpretResult interpret(const std::string &string);
     InterpretResult run();
@@ -200,32 +197,6 @@ InterpretResult VM::run() {
             case OpCode::True: push(true); break;
             case OpCode::False: push(false); break;
             case OpCode::Pop: pop(); break;
-            case OpCode::DefineGlobal: {
-                auto name = readString();
-                globals[name.text] = peek(0);
-                pop();
-                break;
-            }
-            case OpCode::GetGlobal: {
-                auto name = readString();
-                auto found = globals.find(name.text);
-                if (found == globals.end()) {
-                    runtimeError() << "Undefined variable '" << name.text << "'" << std::endl;
-                    return InterpretResult::RuntimeError;
-                }
-                push(found->second);
-                break;
-            }
-            case OpCode::SetGlobal: {
-                auto name = readString();
-                auto found = globals.find(name.text);
-                if (found == globals.end()) {
-                    runtimeError() << "Undefined variable '" << name.text << "'" << std::endl;
-                    return InterpretResult::RuntimeError;
-                }
-                found->second = peek(0);
-                break;
-            }
             case OpCode::GetLocal: {
                 uint8_t slot = readByte();
                 push(stack[frame->firstSlot + slot]);

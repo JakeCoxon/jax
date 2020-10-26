@@ -48,12 +48,6 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction(chunk, "False", offset);
         case OpCode::Pop:
             return simpleInstruction(chunk, "Pop", offset);
-        case OpCode::DefineGlobal:
-            return constantInstruction(chunk, "DefineGlobal", offset);
-        case OpCode::GetGlobal:
-            return constantInstruction(chunk, "GetGlobal", offset);
-        case OpCode::SetGlobal:
-            return constantInstruction(chunk, "SetGlobal", offset);
         case OpCode::GetLocal:
             return byteInstruction(chunk, "GetLocal", offset);
         case OpCode::SetLocal:
