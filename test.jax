@@ -1,23 +1,23 @@
-var start = clock()
-var apple = 5
-var thing = "monkey"
-var banana = apple + 2
-
-fun hello(x: number, y: bool, z: string) {
-  print("x plus 1 is {}", x)
-  print("y is {}", y)
-  print("z is {}", z)
-}
-
-fun things(a: number, b: number): number {
-  if b > 0 {
-    return things(a + 1, b - 1)
-  }
-  return a
-}
-
-hello(2, apple < 40, thing)
-//print("Things are {}", 200 + things(5, 6))
+//var start = clock()
+//var apple = 5
+//var thing = "monkey"
+//var banana = apple + 2
+//
+//fun hello(x: number, y: bool, z: string) {
+//  print("x plus 1 is {}", x)
+//  print("y is {}", y)
+//  print("z is {}", z)
+//}
+//
+//fun things(a: number, b: number): number {
+//  if b > 0 {
+//    return things(a + 1, b - 1)
+//  }
+//  return a
+//}
+//
+//hello(2, apple < 40, thing)
+////print("Things are {}", 200 + things(5, 6))
 
 fun compare(x, y) {
   
@@ -28,56 +28,56 @@ fun compare(x, y) {
 compare("hello", "jello")
 compare(5, 5)
 
-fun xxx(y) {
-  if true {
-    return
-  }
-  xxx(y - 1)
-}
-xxx(1)
-
-fun fib(n): number {
-  if n < 2 {
-    return n
-  }
-  return fib(n - 2) + fib(n - 1);
-}
-
-if apple < 0 {
-  print("Banana is {}", banana)
-}
-
-while banana > 0 {
-  banana = banana - 1
-  print("Banana is {}", banana)
-}
-
-var dyn: dynamic = "thing"
-print("Dyn is {}", dyn)
-dyn = 200
-print("Dyn is {}", dyn)
-
-//print("{}", fib(35) == 9227465)
-//print("{}", fib(3))
-
-
-{
-  var x = array()
-  print("size of {} is {}", x, size(x))
-
-  add(x, "hello")
-  add(x, "this")
-  add(x, "is")
-  add(x, "a")
-  add(x, "test")
-  print("size of {} is {}", x, size(x))
-
-  var i = 0
-  while i < size(x) {
-    print("index {} is {}", i, get(x, i))
-    i = i + 1
-  }
-
-}
-
-print("time was {}", clock() - start)
+//fun xxx(y) {
+//  if true {
+//    return
+//  }
+//  xxx(y - 1)
+//}
+//xxx(1)
+//
+//fun fib(n): number {
+//  if n < 2 {
+//    return n
+//  }
+//  return fib(n - 2) + fib(n - 1);
+//}
+//
+//if apple < 0 {
+//  print("Banana is {}", banana)
+//}
+//
+//while banana > 0 {
+//  banana = banana - 1
+//  print("Banana is {}", banana)
+//}
+//
+//var dyn: dynamic = "thing"
+//print("Dyn is {}", dyn)
+//dyn = 200
+//print("Dyn is {}", dyn)
+//
+////print("{}", fib(35) == 9227465)
+////print("{}", fib(3))
+//
+//
+//{
+//  var x = array()
+//  print("size of {} is {}", x, size(x))
+//
+//  add(x, "hello")
+//  add(x, "this")
+//  add(x, "is")
+//  add(x, "a")
+//  add(x, "test")
+//  print("size of {} is {}", x, size(x))
+//
+//  var i = 0
+//  while i < size(x) {
+//    print("index {} is {}", i, get(x, i))
+//    i = i + 1
+//  }
+//
+//}
+//
+//print("time was {}", clock() - start)

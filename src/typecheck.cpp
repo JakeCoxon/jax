@@ -263,7 +263,7 @@ struct PrintState {
 
 PrintState typecheckPrintBegin(Parser *parser) {
     PrintState ps;
-    ps.initialConstantIndex = parser->currentChunk().constants.size() - 1;
+    ps.initialConstantIndex = parser->currentChunk().constants.size() - 1 * VALUE_SIZE_BYTES;
     return ps;
 }
 
@@ -279,12 +279,14 @@ void typecheckPrintArgument(Parser *parser, PrintState *printState, int argIndex
         return;
     }
 
-    if ((int)parser->currentChunk().constants.size() != printState->initialConstantIndex + 2) {
+    if ((int)parser->currentChunk().constants.size() != printState->initialConstantIndex + 2 * VALUE_SIZE_BYTES) {
         parser->error("Print expects a constant string as the first argument.");
         return;
     }
 
-    Value stringConstant = parser->currentChunk().constants.back();
+    // TODO: This is not typechecked
+    auto ptr = &parser->currentChunk().constants[parser->currentChunk().constants.size() - VALUE_SIZE_BYTES];
+    Value stringConstant = *reinterpret_cast<Value*>(ptr);
     if (!stringConstant.isString()) {
         parser->error("Print expects a constant string as the first argument.");
         return;

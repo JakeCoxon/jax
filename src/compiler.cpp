@@ -357,10 +357,10 @@ void Parser::errorAt(Token &token, const std::string &message) {
 
 uint8_t Parser::makeConstant(Value value) {
     int constant = currentChunk().addConstant(value);
-    if (constant > UINT8_MAX) {
-        error("Too many constants in one chunk.");
-        return 0;
-    }
+    // if (constant > UINT8_MAX) {
+    //     error("Too many constants in one chunk.");
+    //     return 0;
+    // }
     return (uint8_t)constant;
 }
 
