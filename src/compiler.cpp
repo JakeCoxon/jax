@@ -117,10 +117,10 @@ struct Parser {
     void consume(TokenType type, const std::string &message);
     void consumeEndStatement(const std::string &message);
     void errorAt(Token &token, const std::string &message);
-    uint8_t makeConstant(Value value);
+    uint16_t makeConstant(Value value);
     void parsePrecedence(Precedence precedence);
     void parseVariable(const std::string &errorMessage);
-    uint8_t identifierConstant(const std::string_view &name);
+    uint16_t identifierConstant(const std::string_view &name);
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
@@ -167,6 +167,10 @@ struct Parser {
     }
     void emitByte(OpCode opcode) {
         emitByte(static_cast<uint8_t>(opcode));
+    }
+    void emitTwoBytes(uint16_t bytes) {
+        currentChunk().write((bytes << 8) & 0xff, previous.line);
+        currentChunk().write(bytes & 0xff, previous.line);
     }
 
     void errorAtCurrent(const std::string &message) {
@@ -355,13 +359,13 @@ void Parser::errorAt(Token &token, const std::string &message) {
     }
 }
 
-uint8_t Parser::makeConstant(Value value) {
+uint16_t Parser::makeConstant(Value value) {
     int constant = currentChunk().addConstant(value);
     // if (constant > UINT8_MAX) {
     //     error("Too many constants in one chunk.");
     //     return 0;
     // }
-    return (uint8_t)constant;
+    return (uint16_t)constant;
 }
 
 void Parser::synchronize() {
@@ -508,7 +512,7 @@ void Parser::emitReturn() {
 }
 
 void Parser::emitConstant(Value value) {
-    emitByte(OpCode::Constant); emitByte(makeConstant(value));
+    emitByte(OpCode::Constant); emitTwoBytes(makeConstant(value));
 }
 
 
@@ -572,7 +576,7 @@ void Parser::parseVariable(const std::string &errorMessage) {
     compiler->declareVariable(this, previous.text);
 }
 
-uint8_t Parser::identifierConstant(const std::string_view &name) {
+uint16_t Parser::identifierConstant(const std::string_view &name) {
     // TODO: Garbage collection
     auto objStr = new ObjString(std::string(name));
     return makeConstant(objStr);
@@ -739,7 +743,7 @@ void Parser::funDeclaration() {
     auto function = new ObjFunction();
     Compiler *enclosingCompiler = compiler;
     Compiler *functionCompiler = new Compiler(function, FunctionType::Function, compiler);
-    uint8_t constant = makeConstant(function);
+    uint16_t constant = makeConstant(function);
     // int functionType = typecheckFunctionDeclaration(this, function);
     // initCompiler(functionCompiler);
     // beginScope();
@@ -914,11 +918,14 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
 
     emitByte(OpCode::Constant);
     emitByte(0xFF);
-    size_t patchIndex = currentChunk().code.size() - 1;
+    emitByte(0xFF);
+    size_t patchIndex = currentChunk().code.size() - 2;
     uint8_t argCount = argumentList(functionDeclaration);
     Value function = maybeCompileFunctionInstantiation(functionDeclaration, argCount);
 
-    currentChunk().code[patchIndex] = makeConstant(function);
+    uint16_t constant = makeConstant(function);
+    currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
+    currentChunk().code[patchIndex + 1] = constant & 0xff;
     
     typecheckEndFunctionCall(this, function, argCount);
     emitByte(OpCode::Call);

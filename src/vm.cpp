@@ -54,9 +54,11 @@ struct Chunk {
     void write(OpCode opcode, int line) { 
         write(static_cast<uint8_t>(opcode), line);
     }
+    Value getConstant(size_t index) const {
+        return *reinterpret_cast<const Value*>(&constants[index]);
+    }
     long addConstant(Value value) {
         long new_index = constants.size();
-        int bytes = sizeof(Value) / sizeof(uint8_t);
         constants.resize(constants.size() + VALUE_SIZE_BYTES);
         Value *ptr = reinterpret_cast<Value*>(&constants[new_index]);
         *ptr = value;
@@ -171,13 +173,13 @@ InterpretResult VM::run() {
     auto readByte = [&]() -> uint8_t {
         return frame->function->chunk.code[frame->ip++];
     };
-    auto readConstant = [&]() -> Value { 
-        return *reinterpret_cast<Value*>(&frame->function->chunk.constants[readByte()]);
-    };
     auto readShort = [&]() -> uint16_t { 
         frame->ip += 2;
         return (frame->function->chunk.code[frame->ip - 2] << 8) | 
             frame->function->chunk.code[frame->ip - 1];
+    };
+    auto readConstant = [&]() -> Value { 
+        return frame->function->chunk.getConstant(readShort());
     };
     auto readString = [&]() -> ObjString& { 
         return readConstant().asString();
