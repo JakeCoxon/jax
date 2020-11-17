@@ -25,9 +25,10 @@ struct Local {
     std::string_view name;
     int type = 0;
     int depth;
+    int stackOffset = -1;
 
-    Local(const std::string_view &name, int depth):
-        name(name), depth(depth) {};
+    Local(const std::string_view &name, int depth, int stackOffset):
+        name(name), depth(depth), stackOffset(stackOffset) {};
 };
 
 struct Compiler;
@@ -68,6 +69,7 @@ struct Compiler {
     std::vector<FunctionDeclaration> functionDeclarations;
 
     int scopeDepth = 0;
+    int nextStackSlot = 0;
     bool compiled = false;
 
     Compiler(ObjFunction *function, FunctionType type, Compiler *enclosing)
@@ -130,6 +132,7 @@ struct Parser {
 
     void emitReturn();
     void emitConstant(Value value);
+    void emitDoubleConstant(double value);
     int emitJump(OpCode instruction);
     void patchJump(int offset);
     void emitLoop(int loopStart);
@@ -246,7 +249,7 @@ int Compiler::resolveLocal(const std::string_view &name) {
             if (local->depth == -1) {
                 return -2;
             }
-            return i;
+            return i; // Everything is double size for now
         }
     }
 
@@ -277,7 +280,7 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
     if (locals.size() == UINT8_COUNT) {
         parser->error("Too many local variables on the stack.");
     }
-    locals.push_back(Local { name, -1 });
+    locals.push_back(Local { name, -1, -1 });
 }
 
 void Compiler::markInitialized() {
@@ -397,7 +400,10 @@ void Parser::initCompiler(Compiler *compiler) {
     if (compiler->type != FunctionType::Script) {
         compiler->function->name = new ObjString(std::string(previous.text));
     }
-    compiler->locals.push_back(Local("", 0));
+
+    // I don't think we want to push the current function/top level script on the stack anymore
+    // compiler->locals.push_back(Local("", 0, 0));
+    compiler->nextStackSlot = 0;
 
 }
 
@@ -467,9 +473,12 @@ Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDec
     // TODO: Garbage collection
     compiler->function->name = new ObjString(std::string(functionDeclaration->name));
     compiler->function->arity = functionDeclaration->parameters.size();
-    compiler->locals.push_back(Local("", 0)); // Function object
 
-    
+    // I don't think we want to push the current function/top level script on the stack anymore
+    // compiler->locals.push_back(Local("", 0, 0)); // Function object
+    // compiler->nextStackSlot += 2;
+
+    newFunction->argSlots = 0;
     for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
         compiler->declareVariable(this, functionDeclaration->parameters[i].name);
         compiler->markInitialized();
@@ -498,12 +507,15 @@ void Parser::beginScope() {
 
 void Parser::endScope() {
     compiler->scopeDepth --;
+    int numSlots = 0;
     while (compiler->locals.size() > 0 &&
             compiler->locals.back().depth >
             compiler->scopeDepth) {
-        emitByte(OpCode::Pop);
+        numSlots += slotSizeOfType(compiler->locals.back().type);
         compiler->locals.pop_back();
     }
+    emitByte(OpCode::Pop);
+    emitByte(numSlots);
 }
 
 void Parser::emitReturn() {
@@ -513,8 +525,19 @@ void Parser::emitReturn() {
 
 void Parser::emitConstant(Value value) {
     uint16_t constantIndex = makeConstant(value);
+
     if (constantIndex < 256) {
         emitByte(OpCode::Constant); emitByte(constantIndex);
+    } else {
+        assert(false); // Not implemented yet. Use a wide opcode
+    }
+    // emitByte(OpCode::Constant); emitTwoBytes(constantIndex);
+}
+void Parser::emitDoubleConstant(double value) {
+    uint16_t constantIndex = currentChunk().addDoubleConstant(value);
+
+    if (constantIndex < 256) {
+        emitByte(OpCode::ConstantDouble); emitByte(constantIndex);
     } else {
         assert(false); // Not implemented yet. Use a wide opcode
     }
@@ -627,7 +650,7 @@ void Parser::printStatement() {
         do {
             expression();
             if (argCount == 255) {
-                error("Can't hve more than 255 arguments.");
+                error("Can't have more than 255 arguments.");
             }
             typecheckPrintArgument(this, &printState, argCount);
             argCount ++;
@@ -636,8 +659,17 @@ void Parser::printStatement() {
     consume(TokenType::RightParen, "Expect ')' after arguments.");
     consumeEndStatement("Expect ';' or newline after value.");
     
+    int argType = compiler->expressionTypeStack.back();
+
     typecheckPrintEnd(this, &printState, argCount);
-    emitByte(OpCode::Print);
+
+    
+    if (argType == TypeId::Number || argType == TypeId::Bool) {
+        emitByte(OpCode::PrintDouble);
+    } else {
+        emitByte(OpCode::Print);
+    }
+    
     emitByte(argCount);
 }
 
@@ -661,6 +693,7 @@ void Parser::expressionStatement() {
     expression();
     consumeEndStatement("Expect ';' or newline after expression.");
     emitByte(OpCode::Pop);
+    emitByte(slotSizeOfType(compiler->expressionTypeStack.back()));
     typecheckEndStatement(this);
 }
 
@@ -668,9 +701,11 @@ void Parser::ifStatement() {
     expression();
     typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after if.");
+    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
 
     int thenJump = emitJump(OpCode::JumpIfFalse);
     emitByte(OpCode::Pop);
+    emitByte(conditionSlots);
     beginScope();
     block();
     endScope();
@@ -679,6 +714,7 @@ void Parser::ifStatement() {
 
     patchJump(thenJump);
     emitByte(OpCode::Pop);
+    emitByte(conditionSlots);
 
     if (match(TokenType::Else)) {
         beginScope();
@@ -694,10 +730,12 @@ void Parser::whileStatement() {
     expression();
     typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after condition.");
+    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
 
     int exitJump = emitJump(OpCode::JumpIfFalse);
 
     emitByte(OpCode::Pop);
+    emitByte(conditionSlots);
 
     beginScope();
     block();
@@ -707,6 +745,7 @@ void Parser::whileStatement() {
 
     patchJump(exitJump);
     emitByte(OpCode::Pop);
+    emitByte(conditionSlots);
     consumeEndStatement("Expect ';' or newline after block.");
 }
 
@@ -811,7 +850,7 @@ void Parser::number(ExpressionState es) {
     // https://stackoverflow.com/questions/11752705/does-stdstring-contain-null-terminator
     // Don't want to risk it - just convert to a new string instead
     double value = strtod(std::string(previous.text).c_str(), nullptr);
-    emitConstant(value);
+    emitDoubleConstant(value);
     typecheckNumber(this);
 }
 
@@ -882,11 +921,16 @@ void Parser::string(ExpressionState es) {
 void Parser::and_(ExpressionState es) {
     int endJump = emitJump(OpCode::JumpIfFalse);
 
+    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
     emitByte(OpCode::Pop);
+    emitByte(conditionSlots);
+
     parsePrecedence(Precedence::And);
 
     patchJump(endJump);
     typecheckAnd(this);
+
+    // TODO: Pop when false??
 }
 
 void Parser::or_(ExpressionState es) {
@@ -894,11 +938,15 @@ void Parser::or_(ExpressionState es) {
     int endJump = emitJump(OpCode::Jump);
 
     patchJump(elseJump);
+    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
     emitByte(OpCode::Pop);
+    emitByte(conditionSlots);
 
     parsePrecedence(Precedence::Or);
     patchJump(endJump);
     typecheckOr(this);
+
+    // TODO: Pop when false??
 }
 
 uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
@@ -922,8 +970,8 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     typecheckBeginFunctionCall(this, nullptr);
 
-    emitByte(OpCode::Constant);
-    emitByte(0xFF);
+    // emitByte(OpCode::Constant);
+    // emitByte(0xFF);
     // emitByte(0xFF);
     size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
@@ -932,11 +980,11 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     uint16_t constant = makeConstant(function);
     assert(constant < 256);
     // currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
-    currentChunk().code[patchIndex] = constant & 0xff;
+    // currentChunk().code[patchIndex] = constant & 0xff;
     
     typecheckEndFunctionCall(this, function, argCount);
     emitByte(OpCode::Call);
-    emitByte(argCount);
+    emitByte(constant);
 }
 
 void Parser::variable(ExpressionState es) {
@@ -960,21 +1008,29 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
         }
     } else {
         
-        OpCode getOp, setOp;
         int arg = compiler->resolveLocal(name);
         if (arg == -2) {
             error("Can't read local variable in its own initializer.");
         }
         if (arg != -1) {
-            getOp = OpCode::GetLocal;
-            setOp = OpCode::SetLocal;
+            OpCode getOp = OpCode::GetLocal;
+            OpCode setOp = OpCode::SetLocal;
+
+            int type = compiler->locals[arg].type;
+            if (type == TypeId::Number) {
+                getOp = OpCode::GetLocalDouble;
+                setOp = OpCode::SetLocalDouble;
+            }
+
+            size_t stackOffset = compiler->locals[arg].stackOffset;
+            assert(stackOffset < 256);
 
             if (es.canAssign && match(TokenType::Equal)) {
                 expression();
-                emitByte(setOp); emitByte((uint8_t)arg);
+                emitByte(setOp); emitByte((uint8_t)stackOffset);
                 typecheckAssign(this, arg);
             } else {
-                emitByte(getOp); emitByte((uint8_t)arg);
+                emitByte(getOp); emitByte((uint8_t)stackOffset);
                 typecheckVariable(this, arg);
             }
         } else {

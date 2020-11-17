@@ -8,6 +8,14 @@ namespace TypeId {
     int Function = 6;
 }
 
+int slotSizeOfType(int type) {
+    if (type == TypeId::Number || type == TypeId::Void || type == TypeId::Bool) {
+        return 2;
+    } else {
+        return 4;
+    }
+}
+
 int typeByName(Parser *parser, const std::string_view &name) {
     int type = TypeId::Void;
     if (name == "void") {
@@ -84,7 +92,10 @@ void typecheckVarDeclaration(Parser *parser, int type) {
     if (!typecheckIsAssignable(parser, type, backType)) {
         parser->error("Cannot declare a variable with a different type.");
     }
-    parser->compiler->locals.back().type = type;
+    Local &local = parser->compiler->locals.back();
+    local.type = type;
+    local.stackOffset = parser->compiler->nextStackSlot;
+    parser->compiler->nextStackSlot += slotSizeOfType(type);
 }
 
 void typecheckNil(Parser *parser, int type) {
@@ -114,7 +125,9 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
     };
 
     auto assertEqual = [&]() {
-        if (typeA != typeB) { parser->error("Types don't match"); }
+        if (typeA != typeB) { 
+            parser->error("Types don't match");
+        }
     };
 
     int resultType;
@@ -182,9 +195,16 @@ void typecheckVariable(Parser *parser, int local) {
 
 
 void typecheckParameter(Parser *parser, ObjFunction *function, int functionType, int argumentType) {
-    parser->compiler->locals.back().type = argumentType;
+    Local &local = parser->compiler->locals.back();
+    local.type = argumentType;
+    local.stackOffset = parser->compiler->nextStackSlot;
+    int slotSize = slotSizeOfType(argumentType);
+    parser->compiler->nextStackSlot += slotSize;
+    function->argSlots += slotSize;
+
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     functionTypeObj->parameterTypes.push_back(argumentType);
+
 }
 
 int typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
@@ -198,6 +218,11 @@ void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, i
     auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
     function->type = functionType;
     functionTypeObj->returnType = returnType;
+    // if (returnType != TypeId::Void) {
+        function->returnSlots = 2; // :EverythingDouble
+    // } else {
+    //     function->returnSlots = 0;
+    // }
 }
 
 int getFunctionType(Parser *parser) {
@@ -263,7 +288,7 @@ struct PrintState {
 
 PrintState typecheckPrintBegin(Parser *parser) {
     PrintState ps;
-    ps.initialConstantIndex = parser->currentChunk().constants.size() - 1 * VALUE_SIZE_BYTES;
+    ps.initialConstantIndex = parser->currentChunk().constants.size() - 1 * VALUE_SIZE_SLOTS;
     return ps;
 }
 
@@ -273,42 +298,42 @@ void typecheckPrintArgument(Parser *parser, PrintState *printState, int argIndex
         return;
     }
 
-    int firstArgType = parser->compiler->expressionTypeStack.back();
-    if (firstArgType != TypeId::String) {
-        parser->error("Print expects a constant string as the first argument.");
-        return;
-    }
+    // int firstArgType = parser->compiler->expressionTypeStack.back();
+    // if (firstArgType != TypeId::String) {
+    //     parser->error("Print expects a constant string as the first argument.");
+    //     return;
+    // }
 
-    if ((int)parser->currentChunk().constants.size() != printState->initialConstantIndex + 2 * VALUE_SIZE_BYTES) {
-        parser->error("Print expects a constant string as the first argument.");
-        return;
-    }
+    // if ((int)parser->currentChunk().constants.size() != printState->initialConstantIndex + 2 * VALUE_SIZE_SLOTS) {
+    //     parser->error("Print expects a constant string as the first argument.");
+    //     return;
+    // }
 
-    // TODO: This is not typechecked
-    auto ptr = &parser->currentChunk().constants[parser->currentChunk().constants.size() - VALUE_SIZE_BYTES];
-    Value stringConstant = *reinterpret_cast<Value*>(ptr);
-    if (!stringConstant.isString()) {
-        parser->error("Print expects a constant string as the first argument.");
-        return;
-    }
+    // // TODO: This is not typechecked
+    // auto ptr = &parser->currentChunk().constants[parser->currentChunk().constants.size() - VALUE_SIZE_SLOTS];
+    // Value stringConstant = *reinterpret_cast<Value*>(ptr);
+    // if (!stringConstant.isString()) {
+    //     parser->error("Print expects a constant string as the first argument.");
+    //     return;
+    // }
 
-    ObjString s = stringConstant.asString();
-    for (size_t i = 0; i < s.text.size(); i++) {
-        if (s.text[i] == '{') {
-            i ++;
-            if (i >= s.text.size() || s.text[i] != '}') {
-                parser->error("Invalid syntax in print string");
-                return;
-            }
-            printState->expectedVarargs ++;
-        }
-    }
+    // ObjString s = stringConstant.asString();
+    // for (size_t i = 0; i < s.text.size(); i++) {
+    //     if (s.text[i] == '{') {
+    //         i ++;
+    //         if (i >= s.text.size() || s.text[i] != '}') {
+    //             parser->error("Invalid syntax in print string");
+    //             return;
+    //         }
+    //         printState->expectedVarargs ++;
+    //     }
+    // }
 }
 
 void typecheckPrintEnd(Parser *parser, PrintState *printState, int argCount) {
-    if (printState->expectedVarargs != argCount - 1) {
-        parser->error("Invalid number of arguments to print statement.");
-    }
+    // if (printState->expectedVarargs != argCount - 1) {
+    //     parser->error("Invalid number of arguments to print statement.");
+    // }
     for (int i = 0; i < argCount - 1; i++) {
         typecheckPop(parser);
     }

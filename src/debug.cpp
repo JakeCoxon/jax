@@ -18,6 +18,13 @@ static int jumpInstruction(const Chunk &chunk, const char* name, int sign, int o
     return offset + 3;
 }
 
+static int constantInstructionDouble(const Chunk &chunk, const char* name, int offset) {
+    uint8_t constant = chunk.code[offset + 1];
+    // uint16_t constant = (uint16_t)(chunk.code[offset + 1] << 8);
+    // constant |= chunk.code[offset + 2];
+    tfm::printf("%-16s %4d '%s'\n", name, constant, chunk.getDoubleConstant(constant));
+    return offset + 2;
+}
 static int constantInstruction(const Chunk &chunk, const char* name, int offset) {
     uint8_t constant = chunk.code[offset + 1];
     // uint16_t constant = (uint16_t)(chunk.code[offset + 1] << 8);
@@ -40,6 +47,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
     switch (instruction) {
         case OpCode::Constant:
             return constantInstruction(chunk, "Constant", offset);
+        case OpCode::ConstantDouble:
+            return constantInstructionDouble(chunk, "ConstantDouble", offset);
         case OpCode::Nil:
             return simpleInstruction(chunk, "Nil", offset);
         case OpCode::True:
@@ -47,11 +56,15 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
         case OpCode::False:
             return simpleInstruction(chunk, "False", offset);
         case OpCode::Pop:
-            return simpleInstruction(chunk, "Pop", offset);
+            return byteInstruction(chunk, "Pop", offset);
         case OpCode::GetLocal:
             return byteInstruction(chunk, "GetLocal", offset);
+        case OpCode::GetLocalDouble:
+            return byteInstruction(chunk, "GetLocalDouble", offset);
         case OpCode::SetLocal:
             return byteInstruction(chunk, "SetLocal", offset);
+        case OpCode::SetLocalDouble:
+            return byteInstruction(chunk, "SetLocalDouble", offset);
         case OpCode::Equal:
             return simpleInstruction(chunk, "Equal", offset);
         case OpCode::Less:
@@ -72,6 +85,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction(chunk, "Negate", offset);
         case OpCode::Print:
             return byteInstruction(chunk, "Print", offset);
+        case OpCode::PrintDouble:
+            return byteInstruction(chunk, "PrintDouble", offset);
         case OpCode::Jump:
             return jumpInstruction(chunk, "Jump", 1, offset);
         case OpCode::JumpIfFalse:

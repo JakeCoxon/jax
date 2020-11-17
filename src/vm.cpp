@@ -9,7 +9,7 @@
 #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
-#define VALUE_SIZE_BYTES (sizeof(Value) / sizeof(uint32_t))
+#define VALUE_SIZE_SLOTS (sizeof(Value) / sizeof(uint32_t))
 
 // Overloaded helper for visit
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -17,12 +17,15 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 enum class OpCode: uint8_t {
     Constant,
+    ConstantDouble,
     Nil,
     True,
     False,
     Pop,
     GetLocal,
+    GetLocalDouble,
     SetLocal,
+    SetLocalDouble,
     Equal,
     Greater,
     Less,
@@ -33,6 +36,7 @@ enum class OpCode: uint8_t {
     Not,
     Negate,
     Print,
+    PrintDouble,
     Jump,
     JumpIfFalse,
     Loop,
@@ -43,6 +47,7 @@ enum class OpCode: uint8_t {
 struct Chunk {
     std::vector<uint8_t> code;
     std::vector<uint32_t> constants;
+    std::vector<double> doubleConstants;
     std::vector<int> lines;
 
     Chunk() {}
@@ -58,12 +63,20 @@ struct Chunk {
         return *reinterpret_cast<const Value*>(&constants[index]);
     }
     long addConstant(Value value) {
-        long new_index = constants.size();
-        constants.resize(constants.size() + VALUE_SIZE_BYTES);
+        // printf("VALUE_SIZE_SLOTS: %lu\n", VALUE_SIZE_SLOTS);
+        size_t new_index = constants.size();
+        constants.resize(constants.size() + VALUE_SIZE_SLOTS);
         Value *ptr = reinterpret_cast<Value*>(&constants[new_index]);
         *ptr = value;
         // constants.push_back(value);
         return new_index;
+    }
+    long addDoubleConstant(double value) {
+        doubleConstants.push_back(value);
+        return doubleConstants.size() - 1;
+    }
+    double getDoubleConstant(size_t index) const {
+        return doubleConstants[index];
     }
 };
 
@@ -74,6 +87,8 @@ struct ObjFunction: Obj {
     Chunk chunk {};
     ObjString *name = nullptr;
     int type = -1;
+    int argSlots = -1;
+    int returnSlots = -1;
 
     ObjFunction() {}
 };
@@ -109,13 +124,13 @@ ObjFunction *compile(const std::string &source); // compiler.cpp
 
 struct VM {
     std::vector<CallFrame> frames;
-    std::vector<Value> stack;
+    std::vector<uint32_t> stack;
 
     InterpretResult interpret(const std::string &string);
     InterpretResult run();
     ObjString *allocateString(std::string string);
     bool beginCall(ObjFunction* function, int argCount);
-    bool callValue(Value callee, int argCount);
+    bool callValue(Value callee);
     void printOperation(int argCount);
     void binaryOperation(OpCode instruction);
     void unaryOperation(OpCode instruction);
@@ -124,12 +139,58 @@ struct VM {
     void runtimeError(const char* formatString, const Args&... args);
 
     void resetStack() { stack.clear(); };
-    void push(Value value) { stack.push_back(value); }
-    Value peek(int distance) { return stack[stack.size() - distance - 1]; }
-    Value pop() {
-        auto value = stack.back();
-        stack.pop_back();
-        return value;
+
+    template <typename T>
+    void push(T value) { 
+        size_t new_index = stack.size();
+        const int num_slots = sizeof(T) / sizeof(uint32_t);
+        stack.resize(stack.size() + num_slots);
+        T *ptr = reinterpret_cast<T*>(&stack[new_index]);
+        *ptr = value;
+    }
+    
+    // void push(Value value) { stack.push_back(value); }
+
+    
+    // Value peek(int distance) { return stack[stack.size() - distance - 1]; }
+    // Value pop() {
+    //     auto value = stack.back();
+    //     stack.pop_back();
+    //     return value;
+    // }
+
+    // template <typename T>
+    // T peek(int distance) { 
+    //     size_t index = stack.size() - distance - 1
+    //     reinterpret_cast<T*>(&stack[index]);
+    //     return stack[stack.size() - distance - 1];
+    // }
+
+    
+
+    template <typename T>
+    T peek() {
+        const int num_slots = sizeof(T) / sizeof(uint32_t);
+        size_t index = stack.size() - num_slots;
+        return *reinterpret_cast<T*>(&stack[index]);
+    }
+
+
+    template <typename T>
+    T &stack_as(size_t index) {
+        return *reinterpret_cast<T*>(&stack[index]);
+    }
+
+    template <typename T>
+    T pop() {
+        const int num_slots = sizeof(T) / sizeof(uint32_t);
+        size_t index = stack.size() - num_slots;
+        auto value = reinterpret_cast<T*>(&stack[index]);
+        // auto value = stack.back();
+        for (int i = 0; i < num_slots; i++) {
+            stack.pop_back();
+        }
+        return *value;
     }
 
     
@@ -141,7 +202,8 @@ InterpretResult VM::interpret(const std::string &source) {
         return InterpretResult::CompileError;
     }
 
-    push(function);
+    // push(function);
+    // push<double>(0);
     frames.push_back(CallFrame { function, 0, 0 });
 
     InterpretResult result = run();
@@ -199,21 +261,48 @@ InterpretResult VM::run() {
         switch (instruction) {
             case OpCode::Constant: {
                 Value constant = readConstant();
-                push(constant);
+                push<Value>(constant);
                 break;
             }
-            case OpCode::Nil: push(Value::Nil()); break;
-            case OpCode::True: push(true); break;
-            case OpCode::False: push(false); break;
-            case OpCode::Pop: pop(); break;
+            case OpCode::ConstantDouble: {
+                // Value constant = readConstant();
+                double constant = frame->function->chunk.getDoubleConstant(readByte());
+                // getDoubleConstant
+                push<double>(constant);
+                break;
+            }
+            case OpCode::Nil: 
+                // assert(false);
+                push<double>(0.0);
+                // push<double>(Value::Nil());
+                break;
+            case OpCode::True: push<double>(true); break;
+            case OpCode::False: push<double>(false); break;
+            case OpCode::Pop: {
+                int slots = readByte();
+                while (slots) {
+                    pop<uint32_t>(); slots --;
+                }
+                break;
+            }
             case OpCode::GetLocal: {
                 uint8_t slot = readByte();
-                push(stack[frame->firstSlot + slot]);
+                push(stack_as<Value>(frame->firstSlot + slot));
+                break;
+            }
+            case OpCode::GetLocalDouble: {
+                uint8_t slot = readByte();
+                push(stack_as<double>(frame->firstSlot + slot));
                 break;
             }
             case OpCode::SetLocal: {
                 uint8_t slot = readByte();
-                stack[frame->firstSlot + slot] = peek(0);
+                stack_as<Value>(frame->firstSlot + slot) = peek<Value>();
+                break;
+            }
+            case OpCode::SetLocalDouble: {
+                uint8_t slot = readByte();
+                stack_as<double>(frame->firstSlot + slot) = peek<double>();
                 break;
             }
             case OpCode::Equal:
@@ -234,7 +323,13 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::Print: {
-                printOperation(readByte());
+                readByte(); // discard
+                tfm::printf("%s\n", pop<Value>());
+                break;
+            }
+            case OpCode::PrintDouble: {
+                readByte(); // discard
+                tfm::printf("%s\n", pop<double>());
                 break;
             }
             case OpCode::Jump: {
@@ -244,7 +339,7 @@ InterpretResult VM::run() {
             }
             case OpCode::JumpIfFalse: {
                 int offset = readShort();
-                if (peek(0).isFalsey()) frame->ip += offset;
+                if (peek<double>() == 0.0) frame->ip += offset;
                 break;
             }
             case OpCode::Loop: {
@@ -253,26 +348,31 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::Call: {
-                int argCount = readByte();
-                if (!callValue(peek(argCount), argCount)) {
+                // assert(false);
+                // int argCount = readByte();
+                Value function = readConstant();
+
+                if (!callValue(function)) {
                     return InterpretResult::RuntimeError;
                 }
                 frame = &frames.back();
                 break;
             }
             case OpCode::Return: {
-                Value result = pop();
+                // assert(false);
+                double result = pop<double>();
                 frames.pop_back();
                 if (frames.size() == 0) {
-                    pop();
+                    pop<double>();
                     return InterpretResult::Ok;    
                 }
-                int numToPop = stack.size() - frame->firstSlot;
-                for (int i = 0; i < numToPop; i++) {
-                    pop();
+                int slots = stack.size() - frame->firstSlot;
+                while (slots) {
+                    pop<uint32_t>(); slots --;
                 }
                 push(result);
                 frame = &frames.back();
+                break;
             }
         }
     }
@@ -285,33 +385,34 @@ ObjString *VM::allocateString(std::string text) {
 }
 
 bool VM::beginCall(ObjFunction* function, int argCount) {
-    if (argCount != function->arity) {
-        runtimeError("Expected %i arguments but got %i\n", function->arity, argCount);
-        return false;
-    }
+    // if (argCount != function->arity) {
+    //     runtimeError("Expected %i arguments but got %i\n", function->arity, argCount);
+    //     return false;
+    // }
 
     if (frames.size() == FRAMES_MAX) {
         runtimeError("Stack overflow.\n");
         return false;
     }
     frames.push_back(CallFrame {
-        function, 0, stack.size() - argCount - 1
+        function, 0, stack.size() - function->argSlots
     });
     return true;
 }
 
 
 
-bool VM::callValue(Value callee, int argCount) {
+bool VM::callValue(Value callee) {
     return callee.visit(overloaded {
         [&](ObjFunction *function) -> bool {
-            return beginCall(function, argCount);
+            return beginCall(function, function->arity);
         },
         [&](ObjNative *native) -> bool {
-            Value result = native->function(this, argCount, &stack[stack.size() - argCount]);
-            for (int i = 0; i < argCount; i++) { pop(); }
-            pop();
-            push(result);
+            assert(false);
+            // Value result = native->function(this, argCount, &stack[stack.size() - argCount]);
+            // for (int i = 0; i < argCount; i++) { pop(); }
+            // pop();
+            // push(result);
             return true;
         },
         [&](auto value) -> bool {
@@ -322,31 +423,78 @@ bool VM::callValue(Value callee, int argCount) {
 }
 
 void VM::printOperation(int argCount) {
-    ObjString &string = peek(argCount - 1).asString();
+    // assert(false);
+    auto value = peek<double>();
+    tfm::printf("%s\n", value);
+    pop<double>();
 
-    int numArg = 0;
-    for (size_t i = 0; i < string.text.size(); i++) {
-        if (string.text[i] == '{' && i < string.text.size()) {
-            i ++;
-            tfm::printf("%s", peek(argCount - 2 - numArg));
-            numArg++;
-        } else {
-            tfm::printf("%s", string.text[i]);
-        }
-    }
-    tfm::printf("\n");
-    for (int i = 0; i < argCount; i++) {
-        pop();
-    }
+    // ObjString &string = peek(argCount - 1).asString();
+
+    // int numArg = 0;
+    // for (size_t i = 0; i < string.text.size(); i++) {
+    //     if (string.text[i] == '{' && i < string.text.size()) {
+    //         i ++;
+    //         tfm::printf("%s", peek(argCount - 2 - numArg));
+    //         numArg++;
+    //     } else {
+    //         tfm::printf("%s", string.text[i]);
+    //     }
+    // }
+    // tfm::printf("\n");
+    // for (int i = 0; i < argCount; i++) {
+    //     pop();
+    // }
 }
 
 
+// void VM::binaryOperation(OpCode instruction) {
+
+//     Value b = peek(0);
+//     Value a = peek(1);
+
+//     Value result = rollbear::visit([this](auto &a, auto &b, OpCode op) -> Value {
+//         using A = std::decay_t<decltype(a)>;
+//         using B = std::decay_t<decltype(b)>;
+
+//         if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
+//             if (op == OpCode::Greater)  return a > b;
+//             if (op == OpCode::Less)     return a < b;
+//             if (op == OpCode::Subtract) return a - b;
+//             if (op == OpCode::Multiply) return a * b;
+//             if (op == OpCode::Divide)   return a / b;
+//         }
+
+//         if (op == OpCode::Equal) { 
+//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) { 
+//                 return a->text == b->text;
+//             } else if constexpr (std::is_same_v<A, B>) { return a == b; }
+//             else { return false; }
+//         }
+
+//         if (op == OpCode::Add) { 
+//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
+//                 return allocateString(a->text + b->text);
+//             }
+//             else if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
+//                 return a + b;
+//             }
+//         }
+
+//         runtimeError("Invalid operands for operator.\n");
+//         return Value::Nil();
+//     }, a.variant, b.variant, instruction);
+
+//     if (stack.empty()) return;
+//     pop(); pop(); push(result);
+
+// }
+
 void VM::binaryOperation(OpCode instruction) {
 
-    Value b = peek(0);
-    Value a = peek(1);
+    double b = pop<double>();
+    double a = pop<double>();
 
-    Value result = rollbear::visit([this](auto &a, auto &b, OpCode op) -> Value {
+    auto func = [this](auto &a, auto &b, OpCode op) -> double {
         using A = std::decay_t<decltype(a)>;
         using B = std::decay_t<decltype(b)>;
 
@@ -375,25 +523,22 @@ void VM::binaryOperation(OpCode instruction) {
         }
 
         runtimeError("Invalid operands for operator.\n");
-        return Value::Nil();
-    }, a.variant, b.variant, instruction);
+        return 0.0;
+    };
+    auto result = func(a, b, instruction);
 
-    if (stack.empty()) return;
-    pop(); pop(); push(result);
+    // if (stack.empty()) return;
+    push(result);
 
 }
 
 void VM::unaryOperation(OpCode instruction) {
     switch (instruction) {
         case OpCode::Not:
-            push(pop().isFalsey());
+            push<double>(!pop<double>());
             break;
         case OpCode::Negate: {
-            if (!peek(0).isNumber()) {
-                runtimeError("Operand must be a number.\n");
-                return;
-            }
-            push(-pop().asNumber());
+            push<double>(-pop<double>());
             break;
         }
         default: return;
