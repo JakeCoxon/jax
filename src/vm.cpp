@@ -9,7 +9,7 @@
 #define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
-#define VALUE_SIZE_BYTES (sizeof(Value) / sizeof(uint8_t))
+#define VALUE_SIZE_BYTES (sizeof(Value) / sizeof(uint32_t))
 
 // Overloaded helper for visit
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -42,7 +42,7 @@ enum class OpCode: uint8_t {
 
 struct Chunk {
     std::vector<uint8_t> code;
-    std::vector<uint8_t> constants;
+    std::vector<uint32_t> constants;
     std::vector<int> lines;
 
     Chunk() {}
@@ -179,7 +179,7 @@ InterpretResult VM::run() {
             frame->function->chunk.code[frame->ip - 1];
     };
     auto readConstant = [&]() -> Value { 
-        return frame->function->chunk.getConstant(readShort());
+        return frame->function->chunk.getConstant(readByte());
     };
     auto readString = [&]() -> ObjString& { 
         return readConstant().asString();

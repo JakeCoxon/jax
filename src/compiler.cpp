@@ -512,7 +512,13 @@ void Parser::emitReturn() {
 }
 
 void Parser::emitConstant(Value value) {
-    emitByte(OpCode::Constant); emitTwoBytes(makeConstant(value));
+    uint16_t constantIndex = makeConstant(value);
+    if (constantIndex < 256) {
+        emitByte(OpCode::Constant); emitByte(constantIndex);
+    } else {
+        assert(false); // Not implemented yet. Use a wide opcode
+    }
+    // emitByte(OpCode::Constant); emitTwoBytes(constantIndex);
 }
 
 
@@ -918,14 +924,15 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
 
     emitByte(OpCode::Constant);
     emitByte(0xFF);
-    emitByte(0xFF);
-    size_t patchIndex = currentChunk().code.size() - 2;
+    // emitByte(0xFF);
+    size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
     Value function = maybeCompileFunctionInstantiation(functionDeclaration, argCount);
 
     uint16_t constant = makeConstant(function);
-    currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
-    currentChunk().code[patchIndex + 1] = constant & 0xff;
+    assert(constant < 256);
+    // currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
+    currentChunk().code[patchIndex] = constant & 0xff;
     
     typecheckEndFunctionCall(this, function, argCount);
     emitByte(OpCode::Call);

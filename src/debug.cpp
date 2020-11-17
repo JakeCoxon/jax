@@ -19,10 +19,11 @@ static int jumpInstruction(const Chunk &chunk, const char* name, int sign, int o
 }
 
 static int constantInstruction(const Chunk &chunk, const char* name, int offset) {
-    uint16_t constant = (uint16_t)(chunk.code[offset + 1] << 8);
-    constant |= chunk.code[offset + 2];
+    uint8_t constant = chunk.code[offset + 1];
+    // uint16_t constant = (uint16_t)(chunk.code[offset + 1] << 8);
+    // constant |= chunk.code[offset + 2];
     tfm::printf("%-16s %4d '%s'\n", name, constant, chunk.getConstant(constant));
-    return offset + 3;
+    return offset + 2;
 }
 
 
