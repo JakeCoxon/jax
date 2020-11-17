@@ -27,9 +27,11 @@ enum class OpCode: uint8_t {
     SetLocal,
     SetLocalDouble,
     Equal,
+    EqualDouble,
     Greater,
     Less,
     Add,
+    AddDouble,
     Subtract,
     Multiply,
     Divide,
@@ -37,6 +39,7 @@ enum class OpCode: uint8_t {
     Negate,
     Print,
     PrintDouble,
+    ToStringDouble,
     Jump,
     JumpIfFalse,
     Loop,
@@ -132,7 +135,9 @@ struct VM {
     bool beginCall(ObjFunction* function, int argCount);
     bool callValue(Value callee);
     void printOperation(int argCount);
+
     void binaryOperation(OpCode instruction);
+    void binaryOperationDouble(OpCode instruction);
     void unaryOperation(OpCode instruction);
 
     template<typename... Args>
@@ -305,14 +310,20 @@ InterpretResult VM::run() {
                 stack_as<double>(frame->firstSlot + slot) = peek<double>();
                 break;
             }
-            case OpCode::Equal:
+            case OpCode::Add:
+            case OpCode::Equal: {
+                binaryOperation(instruction);
+                if (stack.empty()) return InterpretResult::RuntimeError;
+                break;
+            }
+            case OpCode::EqualDouble:
             case OpCode::Greater:
             case OpCode::Less:
-            case OpCode::Add:
+            case OpCode::AddDouble:
             case OpCode::Subtract:
             case OpCode::Multiply:
             case OpCode::Divide: {
-                binaryOperation(instruction);
+                binaryOperationDouble(instruction);
                 if (stack.empty()) return InterpretResult::RuntimeError;
                 break;
             }
@@ -330,6 +341,11 @@ InterpretResult VM::run() {
             case OpCode::PrintDouble: {
                 readByte(); // discard
                 tfm::printf("%s\n", pop<double>());
+                break;
+            }
+            case OpCode::ToStringDouble: {
+                auto str = allocateString(tfm::format("%s", pop<double>()));
+                push<Value>(str);
                 break;
             }
             case OpCode::Jump: {
@@ -489,47 +505,102 @@ void VM::printOperation(int argCount) {
 
 // }
 
-void VM::binaryOperation(OpCode instruction) {
+// void VM::binaryOperationDouble(OpCode instruction) {
+
+//     T b = pop<T>();
+//     T a = pop<U>();
+
+//     auto func = [this](auto &a, auto &b, OpCode op) -> double {
+//         using A = std::decay_t<decltype(a)>;
+//         using B = std::decay_t<decltype(b)>;
+
+//         if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
+//             if (op == OpCode::Greater)  return a > b;
+//             if (op == OpCode::Less)     return a < b;
+//             if (op == OpCode::Subtract) return a - b;
+//             if (op == OpCode::Multiply) return a * b;
+//             if (op == OpCode::Divide)   return a / b;
+//         }
+
+//         if (op == OpCode::Equal) { 
+//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) { 
+//                 return a->text == b->text;
+//             }
+//             else if constexpr (std::is_same_v<A, B>) { return a == b; }
+//             else { return false; }
+//         }
+
+//         if (op == OpCode::Add) { 
+//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
+//                 return allocateString(a->text + b->text);
+//             }
+//             else if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
+//                 return a + b;
+//             }
+//         }
+
+//         runtimeError("Invalid operands for operator.\n");
+//         return 0.0;
+//     };
+//     auto result = rollbear::visit(func, a, b, instruction);
+
+//     // if (stack.empty()) return;
+//     push(result);
+// }
+
+void VM::binaryOperationDouble(OpCode instruction) {
 
     double b = pop<double>();
     double a = pop<double>();
 
     auto func = [this](auto &a, auto &b, OpCode op) -> double {
-        using A = std::decay_t<decltype(a)>;
-        using B = std::decay_t<decltype(b)>;
 
-        if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
-            if (op == OpCode::Greater)  return a > b;
-            if (op == OpCode::Less)     return a < b;
-            if (op == OpCode::Subtract) return a - b;
-            if (op == OpCode::Multiply) return a * b;
-            if (op == OpCode::Divide)   return a / b;
-        }
+        if (op == OpCode::Greater)   return a > b;
+        if (op == OpCode::Less)      return a < b;
+        if (op == OpCode::AddDouble) return a + b;
+        if (op == OpCode::Subtract)  return a - b;
+        if (op == OpCode::Multiply)  return a * b;
+        if (op == OpCode::Divide)    return a / b;
+        if (op == OpCode::Equal)     return a == b;
 
-        if (op == OpCode::Equal) { 
-            if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) { 
-                return a->text == b->text;
-            } else if constexpr (std::is_same_v<A, B>) { return a == b; }
-            else { return false; }
-        }
-
-        if (op == OpCode::Add) { 
-            if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
-                return allocateString(a->text + b->text);
-            }
-            else if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
-                return a + b;
-            }
-        }
-
-        runtimeError("Invalid operands for operator.\n");
+        runtimeError("Invalid operator for numbers.\n");
+        push(a); push(b); // Keep the stack as it was
         return 0.0;
     };
     auto result = func(a, b, instruction);
 
     // if (stack.empty()) return;
     push(result);
+}
 
+void VM::binaryOperation(OpCode instruction) {
+
+    Value b = pop<Value>();
+    Value a = pop<Value>();
+
+    rollbear::visit([this](auto &a, auto &b, OpCode op) -> void {
+        using A = std::decay_t<decltype(a)>;
+        using B = std::decay_t<decltype(b)>;
+
+        if (op == OpCode::Equal) { 
+            if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
+                push<double>(a->text == b->text ? 1.0 : 0.0);
+                return;
+            }
+            else { push<double>(0.0); return; }
+        }
+
+        if (op == OpCode::Add) { 
+            if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
+                push<Value>(allocateString(a->text + b->text));
+                return;
+            }
+        }
+
+        runtimeError("Invalid operands for operator.\n");
+        push(a); push(b); // Keep the stack as it was
+    }, a.variant, b.variant, instruction);
+    
 }
 
 void VM::unaryOperation(OpCode instruction) {

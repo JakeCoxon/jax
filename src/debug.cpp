@@ -67,12 +67,16 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return byteInstruction(chunk, "SetLocalDouble", offset);
         case OpCode::Equal:
             return simpleInstruction(chunk, "Equal", offset);
+        case OpCode::EqualDouble:
+            return simpleInstruction(chunk, "EqualDouble", offset);
         case OpCode::Less:
             return simpleInstruction(chunk, "Less", offset);
         case OpCode::Greater:
             return simpleInstruction(chunk, "Greater", offset);
         case OpCode::Add:
             return simpleInstruction(chunk, "Add", offset);
+        case OpCode::AddDouble:
+            return simpleInstruction(chunk, "AddDouble", offset);
         case OpCode::Subtract:
             return simpleInstruction(chunk, "Subtract", offset);
         case OpCode::Multiply:
@@ -87,6 +91,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return byteInstruction(chunk, "Print", offset);
         case OpCode::PrintDouble:
             return byteInstruction(chunk, "PrintDouble", offset);
+        case OpCode::ToStringDouble:
+            return simpleInstruction(chunk, "ToStringDouble", offset);
         case OpCode::Jump:
             return jumpInstruction(chunk, "Jump", 1, offset);
         case OpCode::JumpIfFalse:

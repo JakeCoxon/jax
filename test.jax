@@ -7,18 +7,9 @@ print(banana)
 banana = banana - 1
 // print(banana)
 
-print(banana == 6)
-
-fun test(x: number): number {
-	return x * 5
-}
-print(test(banana) + 2)
-
-fun test2(x: number, y: string) {
-	print(x)
-	print(y)
-}
-test2(200, "hello")
+print(thing == "monkey")
+print(thing + "_something")
+print(thing + 3)
 
 // fun hello(x: number, y: bool, z: string) {
 //  print("x plus 1 is {}", x)

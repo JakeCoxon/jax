@@ -874,24 +874,46 @@ void Parser::unary(ExpressionState es) {
 
 void Parser::binary(ExpressionState es) {
     TokenType operatorType = previous.type;
+
+    bool concatenation = false;
+    if (operatorType == TokenType::Plus) {
+        int type = compiler->expressionTypeStack.back();
+        bool isNumber = type == TypeId::Number || type == TypeId::Bool;
+        if (!isNumber) {
+            concatenation = true;
+        }
+    }
     
     ParseRule &rule = getRule(operatorType);
     int prec = static_cast<int>(rule.precedence);
     parsePrecedence(Precedence(prec + 1)); // +1 because of left associativity
 
+    int type = compiler->expressionTypeStack.back();
+    bool isNumber = type == TypeId::Number || type == TypeId::Bool;
+
     typecheckBinary(this, operatorType);
 
     switch (operatorType) {
-        case TokenType::BangEqual:     emitByte(OpCode::Equal); emitByte(OpCode::Not); break;
-        case TokenType::EqualEqual:    emitByte(OpCode::Equal); break;
+        case TokenType::BangEqual:     emitByte(isNumber ? OpCode::EqualDouble : OpCode::Equal); emitByte(OpCode::Not); break;
+        case TokenType::EqualEqual:    emitByte(isNumber ? OpCode::EqualDouble : OpCode::Equal); break;
         case TokenType::Greater:       emitByte(OpCode::Greater); break;
         case TokenType::GreaterEqual:  emitByte(OpCode::Less); emitByte(OpCode::Not); break;
         case TokenType::Less:          emitByte(OpCode::Less); break;
         case TokenType::LessEqual:     emitByte(OpCode::Greater); emitByte(OpCode::Not); break;
-        case TokenType::Plus:          emitByte(OpCode::Add); break;
         case TokenType::Minus:         emitByte(OpCode::Subtract); break;
         case TokenType::Star:          emitByte(OpCode::Multiply); break;
         case TokenType::Slash:         emitByte(OpCode::Divide); break;
+        case TokenType::Plus: {
+            if (concatenation) {
+                if (isNumber) {
+                    emitByte(OpCode::ToStringDouble);
+                }
+                emitByte(OpCode::Add);
+            } else {
+                emitByte(OpCode::AddDouble);
+            }
+            break;
+        }
         default: break;
     }
 
@@ -929,8 +951,6 @@ void Parser::and_(ExpressionState es) {
 
     patchJump(endJump);
     typecheckAnd(this);
-
-    // TODO: Pop when false??
 }
 
 void Parser::or_(ExpressionState es) {
@@ -945,8 +965,6 @@ void Parser::or_(ExpressionState es) {
     parsePrecedence(Precedence::Or);
     patchJump(endJump);
     typecheckOr(this);
-
-    // TODO: Pop when false??
 }
 
 uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
