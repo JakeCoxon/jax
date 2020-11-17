@@ -5,11 +5,10 @@ var banana = apple + 2
 print(banana)
 
 banana = banana - 1
-// print(banana)
+print(banana)
 
 print(thing == "monkey")
 print(thing + "_something")
-print(thing + 3)
 
 // fun hello(x: number, y: bool, z: string) {
 //  print("x plus 1 is {}", x)
@@ -51,14 +50,14 @@ print(thing + 3)
 //  return fib(n - 2) + fib(n - 1);
 //}
 //
-//if apple < 0 {
-//  print("Banana is {}", banana)
-//}
-//
-//while banana > 0 {
-//  banana = banana - 1
-//  print("Banana is {}", banana)
-//}
+if apple < 10 {
+ print("apple is less than 10")
+}
+
+while banana > 0 {
+ banana = banana - 1
+ print(banana)
+}
 //
 //var dyn: dynamic = "thing"
 //print("Dyn is {}", dyn)

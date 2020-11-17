@@ -699,9 +699,9 @@ void Parser::expressionStatement() {
 
 void Parser::ifStatement() {
     expression();
+    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
     typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after if.");
-    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
 
     int thenJump = emitJump(OpCode::JumpIfFalse);
     emitByte(OpCode::Pop);
@@ -728,9 +728,9 @@ void Parser::ifStatement() {
 void Parser::whileStatement() {
     int loopStart = currentChunk().code.size();
     expression();
+    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
     typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after condition.");
-    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
 
     int exitJump = emitJump(OpCode::JumpIfFalse);
 

@@ -439,10 +439,11 @@ bool VM::callValue(Value callee) {
 }
 
 void VM::printOperation(int argCount) {
-    // assert(false);
-    auto value = peek<double>();
-    tfm::printf("%s\n", value);
-    pop<double>();
+    // TODO: Fix this
+    assert(false);
+    // auto value = peek<double>();
+    // tfm::printf("%s\n", value);
+    // pop<double>();
 
     // ObjString &string = peek(argCount - 1).asString();
 
@@ -461,92 +462,6 @@ void VM::printOperation(int argCount) {
     //     pop();
     // }
 }
-
-
-// void VM::binaryOperation(OpCode instruction) {
-
-//     Value b = peek(0);
-//     Value a = peek(1);
-
-//     Value result = rollbear::visit([this](auto &a, auto &b, OpCode op) -> Value {
-//         using A = std::decay_t<decltype(a)>;
-//         using B = std::decay_t<decltype(b)>;
-
-//         if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
-//             if (op == OpCode::Greater)  return a > b;
-//             if (op == OpCode::Less)     return a < b;
-//             if (op == OpCode::Subtract) return a - b;
-//             if (op == OpCode::Multiply) return a * b;
-//             if (op == OpCode::Divide)   return a / b;
-//         }
-
-//         if (op == OpCode::Equal) { 
-//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) { 
-//                 return a->text == b->text;
-//             } else if constexpr (std::is_same_v<A, B>) { return a == b; }
-//             else { return false; }
-//         }
-
-//         if (op == OpCode::Add) { 
-//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
-//                 return allocateString(a->text + b->text);
-//             }
-//             else if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
-//                 return a + b;
-//             }
-//         }
-
-//         runtimeError("Invalid operands for operator.\n");
-//         return Value::Nil();
-//     }, a.variant, b.variant, instruction);
-
-//     if (stack.empty()) return;
-//     pop(); pop(); push(result);
-
-// }
-
-// void VM::binaryOperationDouble(OpCode instruction) {
-
-//     T b = pop<T>();
-//     T a = pop<U>();
-
-//     auto func = [this](auto &a, auto &b, OpCode op) -> double {
-//         using A = std::decay_t<decltype(a)>;
-//         using B = std::decay_t<decltype(b)>;
-
-//         if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
-//             if (op == OpCode::Greater)  return a > b;
-//             if (op == OpCode::Less)     return a < b;
-//             if (op == OpCode::Subtract) return a - b;
-//             if (op == OpCode::Multiply) return a * b;
-//             if (op == OpCode::Divide)   return a / b;
-//         }
-
-//         if (op == OpCode::Equal) { 
-//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) { 
-//                 return a->text == b->text;
-//             }
-//             else if constexpr (std::is_same_v<A, B>) { return a == b; }
-//             else { return false; }
-//         }
-
-//         if (op == OpCode::Add) { 
-//             if constexpr (std::is_same_v<A, ObjString*> && std::is_same_v<B, ObjString*>) {
-//                 return allocateString(a->text + b->text);
-//             }
-//             else if constexpr (std::is_same_v<A, double> && std::is_same_v<B, double>) {
-//                 return a + b;
-//             }
-//         }
-
-//         runtimeError("Invalid operands for operator.\n");
-//         return 0.0;
-//     };
-//     auto result = rollbear::visit(func, a, b, instruction);
-
-//     // if (stack.empty()) return;
-//     push(result);
-// }
 
 void VM::binaryOperationDouble(OpCode instruction) {
 
