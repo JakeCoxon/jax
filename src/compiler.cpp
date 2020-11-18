@@ -652,8 +652,10 @@ void Parser::printStatement() {
             if (argCount == 255) {
                 error("Can't have more than 255 arguments.");
             }
+
             typecheckPrintArgument(this, &printState, argCount);
             argCount ++;
+
         } while (match(TokenType::Comma));
     }
     consume(TokenType::RightParen, "Expect ')' after arguments.");
@@ -661,15 +663,14 @@ void Parser::printStatement() {
     
     int argType = compiler->expressionTypeStack.back();
 
+    if (argCount == 1 && (argType == TypeId::Number || argType == TypeId::Bool)) {
+        emitByte(OpCode::ToStringDouble);
+    }
+
     typecheckPrintEnd(this, &printState, argCount);
 
     
-    if (argType == TypeId::Number || argType == TypeId::Bool) {
-        emitByte(OpCode::PrintDouble);
-    } else {
-        emitByte(OpCode::Print);
-    }
-    
+    emitByte(OpCode::Print);
     emitByte(argCount);
 }
 
@@ -1035,7 +1036,7 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
             OpCode setOp = OpCode::SetLocal;
 
             int type = compiler->locals[arg].type;
-            if (type == TypeId::Number) {
+            if (type == TypeId::Number || type == TypeId::Bool) {
                 getOp = OpCode::GetLocalDouble;
                 setOp = OpCode::SetLocalDouble;
             }

@@ -284,6 +284,7 @@ void typecheckReturnNil(Parser *parser, ObjFunction *function) {
 struct PrintState {
     int initialConstantIndex;
     int expectedVarargs = 0;
+    bool formatted = false;
 };
 
 PrintState typecheckPrintBegin(Parser *parser) {
@@ -295,6 +296,10 @@ PrintState typecheckPrintBegin(Parser *parser) {
 void typecheckPrintArgument(Parser *parser, PrintState *printState, int argIndex) {
     if (argIndex > 0) {
         // All types can be printed
+        return;
+    }
+
+    if (!printState->formatted) {
         return;
     }
 

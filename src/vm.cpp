@@ -476,7 +476,7 @@ void VM::binaryOperationDouble(OpCode instruction) {
         if (op == OpCode::Subtract)  return a - b;
         if (op == OpCode::Multiply)  return a * b;
         if (op == OpCode::Divide)    return a / b;
-        if (op == OpCode::Equal)     return a == b;
+        if (op == OpCode::EqualDouble) return a == b;
 
         runtimeError("Invalid operator for numbers.\n");
         push(a); push(b); // Keep the stack as it was

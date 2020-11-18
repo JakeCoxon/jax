@@ -10,30 +10,30 @@ print(banana)
 print(thing == "monkey")
 print(thing + "_something")
 
-// fun hello(x: number, y: bool, z: string) {
-//  print("x plus 1 is {}", x)
-//  print("y is {}", y)
-//  print("z is {}", z)
-// }
+fun hello(x: number, y: bool, z: string) {
+ print(x)
+ print(y)
+ print(z)
+}
+hello(2, apple < 40, thing)
 
-//fun things(a: number, b: number): number {
-//  if b > 0 {
-//    return things(a + 1, b - 1)
-//  }
-//  return a
-//}
-//
-// hello(2, apple < 40, thing)
-////print("Things are {}", 200 + things(5, 6))
-//
-//fun compare(x, y) {
-//  
-//  if x == y {
-//    print("{} is equal to {}", x, y)
-//  }
-//}
-//compare("hello", "jello")
-//compare(5, 5)
+fun things(a: number, b: number): number {
+ if b > 0 {
+   return things(a + 1, b - 1)
+ }
+ return a
+}
+
+print(200 + things(5, 6))
+
+fun compare(x, y) {
+ 
+  if x == y {
+    print("They are the same")
+  }
+}
+compare("hello", "jello")
+compare(5, 5)
 
 //fun xxx(y) {
 //  if true {
@@ -43,13 +43,16 @@ print(thing + "_something")
 //}
 //xxx(1)
 //
-//fun fib(n): number {
+// fun fib(n): number {
 //  if n < 2 {
 //    return n
 //  }
 //  return fib(n - 2) + fib(n - 1);
-//}
+// }
 //
+////print("{}", fib(35) == 9227465)
+////print("{}", fib(3))
+
 if apple < 10 {
  print("apple is less than 10")
 }
@@ -58,14 +61,11 @@ while banana > 0 {
  banana = banana - 1
  print(banana)
 }
-//
-//var dyn: dynamic = "thing"
-//print("Dyn is {}", dyn)
-//dyn = 200
-//print("Dyn is {}", dyn)
-//
-////print("{}", fib(35) == 9227465)
-////print("{}", fib(3))
+
+var dyn: dynamic = "thing"
+print(dyn)
+dyn = 200
+print(dyn)
 //
 //
 //{
