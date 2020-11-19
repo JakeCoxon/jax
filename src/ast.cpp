@@ -14,7 +14,7 @@ enum class StmtKind {
 
 struct Expr {
     ExprKind kind;
-    int type;
+    Type type;
 };
 
 struct FunctionCall {
@@ -115,28 +115,26 @@ struct CodeGen {
         ss << tabs[indent];
     }
 
-    void addTypeName(int type) {
-        switch (type) {
-            case TypeId::Void:      ss << "void"; break;
-            case TypeId::Number:    ss << "double"; break;
-            case TypeId::Bool:      ss << "bool"; break;
-            case TypeId::String:    ss << "string"; break;
-            case TypeId::Dynamic:   ss << "dynamic"; break;
-            case TypeId::Unknown:   ss << "UNKNOWN"; break;
-            case TypeId::Function:  ss << "FUNCTION"; break;
-        }
+    void addTypeName(Type type) {
+        if (type == types::Void)          { ss << "void"; }
+        else if (type == types::Number)   { ss << "double"; }
+        else if (type == types::Bool)     { ss << "bool"; }
+        else if (type == types::String)   { ss << "string"; }
+        else if (type == types::Dynamic)  { ss << "dynamic"; }
+        else if (type == types::Unknown)  { ss << "UNKNOWN"; }
+        else if (type == types::Function) { ss << "FUNCTION"; }
     }
 
     void addFunctions(std::vector<FunInstantiation> &insts) {
         for (auto instAst : insts) {
-            auto functionType = mpark::get<FunctionTypeObj>(parser->types[instAst.inst.type]);
-            int returnType = functionType.returnType;
+            auto functionType = instAst.inst.type->functionTypeData();
+            Type returnType = functionType->returnType;
 
             addTypeName(returnType);
             ss << " " << instAst.inst.declaration->name << "(";
             size_t i = 0;
             for (auto param : instAst.inst.declaration->parameters) {
-                addTypeName(functionType.parameterTypes[i]);
+                addTypeName(functionType->parameterTypes[i]);
                 ss << " " << param.name;
                 if (i < instAst.inst.declaration->parameters.size() - 1) {
                     ss << ", ";
@@ -211,10 +209,10 @@ struct CodeGen {
         switch (stmt->kind) {
             case StmtKind::Print: {
                 ss << "printf(\"";
-                int type = ((PrintStatement*)stmt)->argument->type;
-                if (type == TypeId::Number) ss << "%f";
-                else if (type == TypeId::String) ss << "%s";
-                else if (type == TypeId::Bool) ss << "%i";
+                Type type = ((PrintStatement*)stmt)->argument->type;
+                if (type == types::Number) ss << "%f";
+                else if (type == types::String) ss << "%s";
+                else if (type == types::Bool) ss << "%i";
                 ss << "\\n\", ";
                 addExpr(((PrintStatement*)stmt)->argument, false);
                 ss << ")";

@@ -53,7 +53,7 @@ static void repl(VM &vm) {
 
 int main(int argc, const char* argv[]) {
     VM vm;
-    
+
     if (argc == 1) {
         repl(vm);
     } else if (argc == 2) {

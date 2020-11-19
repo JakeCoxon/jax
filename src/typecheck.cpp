@@ -1,33 +1,24 @@
-namespace TypeId {
-    const int Void = 0;
-    const int Number = 1;
-    const int Bool = 2;
-    const int String = 3;
-    const int Dynamic = 4;
-    const int Unknown = 5;
-    const int Function = 6;
-}
 
-int slotSizeOfType(int type) {
-    if (type == TypeId::Number || type == TypeId::Void || type == TypeId::Bool) {
+int slotSizeOfType(Type type) {
+    if (type == types::Number || type == types::Void || type == types::Bool) {
         return 2;
     } else {
         return 4;
     }
 }
 
-int typeByName(Parser *parser, const std::string_view &name) {
-    int type = TypeId::Void;
+Type typeByName(Parser *parser, const std::string_view &name) {
+    Type type = types::Void;
     if (name == "void") {
-        type = TypeId::Void;
+        type = types::Void;
     } else if (name == "number") {
-        type = TypeId::Number;
+        type = types::Number;
     } else if (name == "bool") {
-        type = TypeId::Bool;
+        type = types::Bool;
     } else if (name == "string") {
-        type = TypeId::String;
+        type = types::String;
     } else if (name == "dynamic") {
-        type = TypeId::Dynamic;
+        type = types::Dynamic;
     } else {
         std::string err = "Unknown type: ";
         err += name;
@@ -36,19 +27,23 @@ int typeByName(Parser *parser, const std::string_view &name) {
     return type;
 }
 
-int addNewType(Parser *parser, GenericType genericType) {
-    parser->types.push_back(genericType);
+int addNewType(Parser *parser, PrimitiveTypeData primData) {
+    parser->types.push_back(new TypeData{ parser->types.size(), PrimitiveTypeData(primData)});
+    return parser->types.size() - 1;
+}
+int addNewType(Parser *parser, FunctionTypeData funcData) {
+    parser->types.push_back(new TypeData{ parser->types.size(), FunctionTypeData(funcData)});
     return parser->types.size() - 1;
 }
 
 void typecheckInit(Parser *parser) {
-    parser->types.push_back(GenericType{"void"}); // Void
-    parser->types.push_back(GenericType{"number"}); // Number
-    parser->types.push_back(GenericType{"bool"}); // Bool
-    parser->types.push_back(GenericType{"string"}); // String
-    parser->types.push_back(GenericType{"dynamic"}); // Dynamic
-    parser->types.push_back(GenericType{"unknown"}); // Unknown
-    parser->types.push_back(GenericType{"function"}); // Function placeholder
+    parser->types.push_back(types::Void); // Void
+    parser->types.push_back(types::Number); // Number
+    parser->types.push_back(types::Bool); // Bool
+    parser->types.push_back(types::String); // String
+    parser->types.push_back(types::Dynamic); // Dynamic
+    parser->types.push_back(types::Unknown); // Unknown
+    parser->types.push_back(types::Function); // Function placeholder
 }
 
 void typecheckPop(Parser *parser) {
@@ -59,12 +54,12 @@ void typecheckPop(Parser *parser) {
     }
 }
 
-bool typecheckIsAssignable(Parser *parser, int typeA, int typeB) {
-    if (typeA == TypeId::Dynamic) {
+bool typecheckIsAssignable(Parser *parser, Type typeA, Type typeB) {
+    if (typeA == types::Dynamic) {
         return true;    
     }
-    if (typeB == TypeId::Void) {
-        return (typeA != TypeId::Number && typeA != TypeId::Bool);
+    if (typeB == types::Void) {
+        return (typeA != types::Number && typeA != types::Bool);
     }
     return typeA == typeB;
 }
@@ -83,10 +78,10 @@ void typecheckIfCondition(Parser *parser) {
     typecheckPop(parser);
 }
 
-void typecheckVarDeclaration(Parser *parser, int type) {
-    int backType = parser->compiler->expressionTypeStack.back();
+void typecheckVarDeclaration(Parser *parser, Type type) {
+    Type backType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
-    if (type == -1) {
+    if (type == types::Void) {
         type = backType;
     }
     if (!typecheckIsAssignable(parser, type, backType)) {
@@ -98,28 +93,28 @@ void typecheckVarDeclaration(Parser *parser, int type) {
     parser->compiler->nextStackSlot += slotSizeOfType(type);
 }
 
-void typecheckNil(Parser *parser, int type) {
-    if (type == -1) {
+void typecheckNil(Parser *parser, Type type) {
+    if (type == types::Void) {
         return;
     }
-    if (typecheckIsAssignable(parser, type, TypeId::Void)) {
+    if (typecheckIsAssignable(parser, type, types::Void)) {
         parser->error("Cannot assign nil to this type.");
     }
 }
 
 void typecheckNumber(Parser *parser) {
-    parser->compiler->expressionTypeStack.push_back(TypeId::Number);
+    parser->compiler->expressionTypeStack.push_back(types::Number);
 }
 
 void typecheckBinary(Parser *parser, TokenType operatorType) {
     Compiler *compiler = parser->compiler;
-    int typeB = compiler->expressionTypeStack.back();
+    Type typeB = compiler->expressionTypeStack.back();
     compiler->expressionTypeStack.pop_back();
-    int typeA = compiler->expressionTypeStack.back();
+    Type typeA = compiler->expressionTypeStack.back();
     compiler->expressionTypeStack.pop_back();
 
     auto assertNumbers = [&]() {
-        if (typeA != TypeId::Number || typeB != TypeId::Number) { 
+        if (typeA != types::Number || typeB != types::Number) { 
             parser->error("Operator expects two numbers.");
         }
     };
@@ -130,14 +125,14 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
         }
     };
 
-    int resultType;
+    Type resultType;
     switch (operatorType) {
-        case TokenType::BangEqual:    assertEqual();   resultType = TypeId::Bool; break;
-        case TokenType::EqualEqual:   assertEqual();   resultType = TypeId::Bool; break;
-        case TokenType::Greater:      assertNumbers(); resultType = TypeId::Bool; break;
-        case TokenType::GreaterEqual: assertNumbers(); resultType = TypeId::Bool; break;
-        case TokenType::Less:         assertNumbers(); resultType = TypeId::Bool; break;
-        case TokenType::LessEqual:    assertNumbers(); resultType = TypeId::Bool; break;
+        case TokenType::BangEqual:    assertEqual();   resultType = types::Bool; break;
+        case TokenType::EqualEqual:   assertEqual();   resultType = types::Bool; break;
+        case TokenType::Greater:      assertNumbers(); resultType = types::Bool; break;
+        case TokenType::GreaterEqual: assertNumbers(); resultType = types::Bool; break;
+        case TokenType::Less:         assertNumbers(); resultType = types::Bool; break;
+        case TokenType::LessEqual:    assertNumbers(); resultType = types::Bool; break;
         case TokenType::Plus:         assertEqual();   resultType = typeA; break;
         case TokenType::Minus:        assertEqual();   resultType = typeA; break;
         case TokenType::Star:         assertEqual();   resultType = typeA; break;
@@ -152,49 +147,49 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
 void typecheckLiteral(Parser *parser) {
     switch (parser->previous.type) {
         case TokenType::False:
-            parser->compiler->expressionTypeStack.push_back(TypeId::Bool);
+            parser->compiler->expressionTypeStack.push_back(types::Bool);
             break;
         case TokenType::True:
-            parser->compiler->expressionTypeStack.push_back(TypeId::Bool);
+            parser->compiler->expressionTypeStack.push_back(types::Bool);
             break;
         case TokenType::Nil:
-            parser->compiler->expressionTypeStack.push_back(TypeId::Void);
+            parser->compiler->expressionTypeStack.push_back(types::Void);
             break;
         default: return;
     }
 }
 
 void typecheckString(Parser *parser) {
-    parser->compiler->expressionTypeStack.push_back(TypeId::String);
+    parser->compiler->expressionTypeStack.push_back(types::String);
 }
 
 void typecheckAnd(Parser *parser) {
     typecheckPop(parser);
     typecheckPop(parser);
-    parser->compiler->expressionTypeStack.push_back(TypeId::Bool);
+    parser->compiler->expressionTypeStack.push_back(types::Bool);
 }
 
 void typecheckOr(Parser *parser) {
     typecheckPop(parser);
     typecheckPop(parser);
-    parser->compiler->expressionTypeStack.push_back(TypeId::Bool);
+    parser->compiler->expressionTypeStack.push_back(types::Bool);
 }
 
 void typecheckAssign(Parser *parser, int local) {
-    int a = parser->compiler->locals[local].type;
-    int b = parser->compiler->expressionTypeStack.back();
+    Type a = parser->compiler->locals[local].type;
+    Type b = parser->compiler->expressionTypeStack.back();
     if (!typecheckIsAssignable(parser, a, b)) {
         parser->error("Cannot assign a different type.");
     }
 }
 
 void typecheckVariable(Parser *parser, int local) {
-    int type = parser->compiler->locals[local].type;
+    Type type = parser->compiler->locals[local].type;
     parser->compiler->expressionTypeStack.push_back(type);
 }
 
 
-void typecheckParameter(Parser *parser, ObjFunction *function, int functionType, int argumentType) {
+void typecheckParameter(Parser *parser, ObjFunction *function, Type functionType, Type argumentType) {
     Local &local = parser->compiler->locals.back();
     local.type = argumentType;
     local.stackOffset = parser->compiler->nextStackSlot;
@@ -202,20 +197,21 @@ void typecheckParameter(Parser *parser, ObjFunction *function, int functionType,
     parser->compiler->nextStackSlot += slotSize;
     function->argSlots += slotSize;
 
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
+    auto functionTypeObj = functionType->functionTypeData();
     functionTypeObj->parameterTypes.push_back(argumentType);
 
 }
 
-int typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
-    parser->types.push_back(FunctionTypeObj {});
-    int functionType = parser->types.size() - 1;
+Type typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
+    addNewType(parser, FunctionTypeData{});
+    // parser->types.push_back(new FunctionTypeData {});
+    // int functionType = 
     // parser->compiler->locals.back().type = functionType;
-    return functionType;
+    return parser->types.back();
 }
 
-void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, int functionType, int returnType) {
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
+void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, Type functionType, Type returnType) {
+    auto functionTypeObj = functionType->functionTypeData();
     function->type = functionType;
     functionTypeObj->returnType = returnType;
     // if (returnType != TypeId::Void) {
@@ -225,13 +221,13 @@ void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, i
     // }
 }
 
-int getFunctionType(Parser *parser) {
+Type getFunctionType(Parser *parser) {
     return parser->compiler->expressionTypeStack.back();
 }
 
 void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDeclaration, int argIndex) {
-    int argumentType = parser->compiler->expressionTypeStack.back();
-    if (functionDeclaration->parameters[argIndex].type == TypeId::Unknown) {
+    Type argumentType = parser->compiler->expressionTypeStack.back();
+    if (functionDeclaration->parameters[argIndex].type == types::Unknown) {
         // will be type checked later
         return;
     }
@@ -241,42 +237,43 @@ void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDecl
 }
 
 void typecheckBeginFunctionCall(Parser *parser, ObjFunction *function) {
-    parser->compiler->expressionTypeStack.push_back(0);
+    parser->compiler->expressionTypeStack.push_back(types::Void);
 }
 void typecheckEndFunctionCall(Parser *parser, Value function, int argCount) {
     for (int i = 0; i < argCount; i++) {
         typecheckPop(parser);
     }
-    int functionType = function.visit(overloaded {
-        [&](ObjFunction *f) -> int { return f->type; },
-        [&](ObjNative *f) -> int { return f->type; },
-        [&](auto value) -> int {
+    Type functionType = function.visit(overloaded {
+        [&](ObjFunction *f) -> Type { return f->type; },
+        [&](ObjNative *f) -> Type { return f->type; },
+        [&](auto value) -> Type {
             parser->error("Invalid function type.");
-            return 0;
+            return types::Void;
         }
     });
     parser->compiler->expressionTypeStack.pop_back();
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[functionType]);
+    auto functionTypeObj = functionType->functionTypeData();
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);
 }
 
-void typecheckUpdateFunctionInstantiation(Parser *parser, int functionType, int argCount) {
+void typecheckUpdateFunctionInstantiation(Parser *parser, Type functionType, int argCount) {
     auto &arg = parser->compiler->expressionTypeStack[parser->compiler->expressionTypeStack.size() - 1 - argCount];
     arg = functionType;
 }
 
 void typecheckReturn(Parser *parser, ObjFunction *function) {
-    int returnStatementType = parser->compiler->expressionTypeStack.back();
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[function->type]);
+    Type returnStatementType = parser->compiler->expressionTypeStack.back();
+    auto functionTypeObj = function->type->functionTypeData();
+
     if (!typecheckIsAssignable(parser, functionTypeObj->returnType, returnStatementType)) {
         parser->error("Type mismatch");
     }
     typecheckEndStatement(parser);
 }
 void typecheckReturnNil(Parser *parser, ObjFunction *function) {
-    int returnStatementType = parser->compiler->expressionTypeStack.back();
-    auto functionTypeObj = &mpark::get<FunctionTypeObj>(parser->types[function->type]);
-    if (!typecheckIsAssignable(parser, functionTypeObj->returnType, TypeId::Void)) {
+    Type returnStatementType = parser->compiler->expressionTypeStack.back();
+    auto functionTypeObj = returnStatementType->functionTypeData();
+    if (!typecheckIsAssignable(parser, functionTypeObj->returnType, types::Void)) {
         parser->error("Type mismatch");
     }
 }

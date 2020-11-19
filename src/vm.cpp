@@ -85,11 +85,44 @@ struct Chunk {
 
 struct VM;
 
+struct TypeData;
+
+struct PrimitiveTypeData {
+    std::string name;
+};
+struct FunctionTypeData {
+    std::vector<TypeData*> parameterTypes;
+    TypeData* returnType;
+};
+
+struct TypeData {
+    const size_t type_id;
+    mpark::variant<PrimitiveTypeData, FunctionTypeData> variant;
+
+
+    FunctionTypeData* functionTypeData() { return &mpark::get<FunctionTypeData>(variant); }
+    PrimitiveTypeData* primitiveTypeData() { return &mpark::get<PrimitiveTypeData>(variant); }
+
+};
+using Type = TypeData*;
+
+
+namespace types {
+    const Type Void     = new TypeData{0, PrimitiveTypeData{"void"}};
+    const Type Number   = new TypeData{1, PrimitiveTypeData{"number"}};
+    const Type Bool     = new TypeData{2, PrimitiveTypeData{"bool"}};
+    const Type String   = new TypeData{3, PrimitiveTypeData{"string"}};
+    const Type Dynamic  = new TypeData{4, PrimitiveTypeData{"dynamic"}};
+    const Type Unknown  = new TypeData{5, PrimitiveTypeData{"unknown"}};
+    const Type Function = new TypeData{6, PrimitiveTypeData{"function"}};
+}
+
+
 struct ObjFunction: Obj {
     int arity = 0;
     Chunk chunk {};
     ObjString *name = nullptr;
-    int type = -1;
+    Type type = types::Void;
     int argSlots = -1;
     int returnSlots = -1;
 
@@ -99,9 +132,9 @@ struct ObjFunction: Obj {
 using NativeFn = std::function<Value(VM *vm, int argCount, Value *args)>;
 
 struct ObjNative: Obj {
-    int type;
+    Type type;
     NativeFn function;
-    ObjNative(int type, NativeFn function): type(type), function(function) {}
+    ObjNative(Type type, NativeFn function): type(type), function(function) {}
 };
 
 struct ObjResource: Obj {

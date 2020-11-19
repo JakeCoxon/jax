@@ -17,13 +17,13 @@ enum class Precedence {
     Primary
 };
 
-enum class FunctionType {
+enum class CompilerType {
     Function, Script,
 };
 
 struct Local {
     std::string_view name;
-    int type = 0;
+    Type type = types::Void;
     int depth;
     int stackOffset = -1;
 
@@ -35,13 +35,13 @@ struct Compiler;
 
 struct FunctionParameter {
     std::string_view name;
-    int type;
+    Type type;
 };
 
 struct FunctionDeclaration;
 
 struct FunctionInstantiation {
-    int type;
+    Type type;
     Value function = mpark::monostate();
     Compiler *compiler = nullptr;
     FunctionDeclaration *declaration = nullptr;
@@ -50,7 +50,7 @@ struct FunctionInstantiation {
 struct FunctionDeclaration {
     std::string_view name;
     std::vector<FunctionParameter> parameters;
-    int returnType;
+    Type returnType;
     bool polymorphic;
 
     Compiler *enclosingCompiler;
@@ -65,17 +65,17 @@ struct Parser;
 
 struct Compiler {
     ObjFunction *function;
-    FunctionType type;
+    CompilerType type;
     Compiler *enclosing;
     std::vector<Local> locals;
-    std::vector<int> expressionTypeStack;
+    std::vector<Type> expressionTypeStack;
     std::vector<FunctionDeclaration*> functionDeclarations;
 
     int scopeDepth = 0;
     int nextStackSlot = 0;
     bool compiled = false;
 
-    Compiler(ObjFunction *function, FunctionType type, Compiler *enclosing)
+    Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
             : function(function), type(type), enclosing(enclosing) {
     }
 
@@ -88,17 +88,6 @@ struct Compiler {
 struct ExpressionState {
     bool canAssign;
 };
-
-struct GenericType {
-    std::string name;
-};
-struct FunctionTypeObj {
-    std::vector<int> parameterTypes;
-    int returnType = -1;
-};
-using Type = mpark::variant<
-    GenericType, FunctionTypeObj
->;
 
 struct AstGen;
 
@@ -207,21 +196,21 @@ static ParseRule &getRule(TokenType type);
 void registry(Parser *parser);
 
 void registerNative(
-        Parser *parser, std::string name, int returnType,
+        Parser *parser, std::string name, Type returnType,
         std::vector<FunctionParameter> parameters, NativeFn nativeFn) {
-    FunctionTypeObj type{};
+    FunctionTypeData type{};
     for (size_t i = 0; i < parameters.size(); i++) {
         type.parameterTypes.push_back(parameters[i].type);
     }
     type.returnType = returnType;
-    parser->types.push_back(type);
-    int typeId = parser->types.size() - 1;
+    // parser->types.push_back(type);
+    // int typeId = parser->types.size() - 1;
 
     // TODO: garbage collection
-    auto native = new ObjNative{typeId, nativeFn};
+    // auto native = new ObjNative{typeId, nativeFn};
     // TODO: garbage collection
-    auto functionName = new ObjString{name};
-    FunctionInstantiation inst = {typeId, native};
+    // auto functionName = new ObjString{name};
+    // FunctionInstantiation inst = {typeId, native};
     // TODO: This is broken for some reason
     // FunctionDeclaration *decl = new FunctionDeclaration {
     //     functionName->text, parameters, returnType, false, nullptr, {inst}, 0, 0, 0
@@ -234,7 +223,7 @@ ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     AstGen ast;
-    Compiler compiler(function, FunctionType::Script, nullptr);
+    Compiler compiler(function, CompilerType::Script, nullptr);
     Parser parser { &scanner, &compiler, &ast };
     ast.parser = &parser;
     typecheckInit(&parser);
@@ -413,7 +402,7 @@ void Parser::synchronize() {
 void Parser::initCompiler(Compiler *compiler) {
     this->compiler = compiler;
     // TODO: Garbage collection
-    if (compiler->type != FunctionType::Script) {
+    if (compiler->type != CompilerType::Script) {
         compiler->function->name = new ObjString(std::string(previous.text));
     }
 
@@ -448,12 +437,12 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
     // slow as hell
     for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
         auto inst = &functionDeclaration->overloads[j];
-        auto functionTypeObj = &mpark::get<FunctionTypeObj>(types[inst->type]);
+        auto functionTypeObj = inst->type->functionTypeData();
 
         bool isMatched = true;
         for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
             size_t end = initialCompiler->expressionTypeStack.size();
-            int argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
+            Type argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
             if (!typecheckIsAssignable(this, functionTypeObj->parameterTypes[i], argumentType)) {
                 isMatched = false; break;
             }
@@ -475,7 +464,7 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
 
     // TODO: Garbage collection
     auto newFunction = new ObjFunction();
-    Compiler *compiler = new Compiler(newFunction, FunctionType::Function, functionDeclaration->enclosingCompiler);
+    Compiler *compiler = new Compiler(newFunction, CompilerType::Function, functionDeclaration->enclosingCompiler);
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
     this->compiler = compiler;
@@ -502,7 +491,7 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
         compiler->declareVariable(this, functionDeclaration->parameters[i].name);
         compiler->markInitialized();
         size_t end = initialCompiler->expressionTypeStack.size();
-        int argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
+        Type argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
         typecheckParameter(this, newFunction, functionType, argumentType);
     }
 
@@ -683,9 +672,9 @@ void Parser::printStatement() {
     consume(TokenType::RightParen, "Expect ')' after arguments.");
     consumeEndStatement("Expect ';' or newline after value.");
     
-    int argType = compiler->expressionTypeStack.back();
+    Type argType = compiler->expressionTypeStack.back();
 
-    if (argCount == 1 && (argType == TypeId::Number || argType == TypeId::Bool)) {
+    if (argCount == 1 && (argType == types::Number || argType == types::Bool)) {
         emitByte(OpCode::ToStringDouble);
     }
 
@@ -699,7 +688,7 @@ void Parser::printStatement() {
 }
 
 void Parser::returnStatement() {
-    if (compiler->type == FunctionType::Script) {
+    if (compiler->type == CompilerType::Script) {
         error("Can't return from top-level code.");
     }
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
@@ -788,7 +777,7 @@ void Parser::varDeclaration() {
     parseVariable("Expect variable name.");
     Token nameToken = previous;
 
-    int type = -1;
+    Type type = types::Void;
     if (match(TokenType::Colon)) {
         consume(TokenType::Identifier, "Expect type name after ':'.");
         type = typeByName(this, previous.text);
@@ -825,7 +814,7 @@ void Parser::funDeclaration() {
     auto name = previous.text;
     auto function = new ObjFunction();
     Compiler *enclosingCompiler = compiler;
-    Compiler *functionCompiler = new Compiler(function, FunctionType::Function, compiler);
+    Compiler *functionCompiler = new Compiler(function, CompilerType::Function, compiler);
     uint16_t constant = makeConstant(function);
     // int functionType = typecheckFunctionDeclaration(this, function);
     // initCompiler(functionCompiler);
@@ -845,7 +834,7 @@ void Parser::funDeclaration() {
             consume(TokenType::Identifier, "Expect parameter name.");
             auto parameterName = previous.text;
 
-            int argumentType = TypeId::Unknown;
+            Type argumentType = types::Unknown;
             if (match(TokenType::Colon)) {
                 consume(TokenType::Identifier, "Expect type name after ':'.");
                 argumentType = typeByName(this, previous.text);
@@ -853,14 +842,14 @@ void Parser::funDeclaration() {
             // typecheckParameter(this, function, functionType, argumentType);
 
             parameters.push_back({ parameterName, argumentType });
-            if (argumentType == TypeId::Unknown) {
+            if (argumentType == types::Unknown) {
                 polymorphic = true;
             }
         } while (match(TokenType::Comma));
     }
     consume(TokenType::RightParen, "Expect ')' after after parameters.");
 
-    int returnType = TypeId::Void;
+    Type returnType = types::Void;
     if (match(TokenType::Colon)) {
         consume(TokenType::Identifier, "Expect type name after ':'.");
         returnType = typeByName(this, previous.text);
@@ -918,8 +907,8 @@ void Parser::binary(ExpressionState es) {
 
     bool concatenation = false;
     if (operatorType == TokenType::Plus) {
-        int type = compiler->expressionTypeStack.back();
-        bool isNumber = type == TypeId::Number || type == TypeId::Bool;
+        Type type = compiler->expressionTypeStack.back();
+        bool isNumber = type == types::Number || type == types::Bool;
         if (!isNumber) {
             concatenation = true;
         }
@@ -929,8 +918,8 @@ void Parser::binary(ExpressionState es) {
     int prec = static_cast<int>(rule.precedence);
     parsePrecedence(Precedence(prec + 1)); // +1 because of left associativity
 
-    int type = compiler->expressionTypeStack.back();
-    bool isNumber = type == TypeId::Number || type == TypeId::Bool;
+    Type type = compiler->expressionTypeStack.back();
+    bool isNumber = type == types::Number || type == types::Bool;
 
     typecheckBinary(this, operatorType);
 
@@ -1088,8 +1077,8 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
             OpCode getOp = OpCode::GetLocal;
             OpCode setOp = OpCode::SetLocal;
 
-            int type = compiler->locals[arg].type;
-            if (type == TypeId::Number || type == TypeId::Bool) {
+            Type type = compiler->locals[arg].type;
+            if (type == types::Number || type == types::Bool) {
                 getOp = OpCode::GetLocalDouble;
                 setOp = OpCode::SetLocalDouble;
             }
