@@ -92,8 +92,6 @@ struct ExpressionState {
 struct AstGen;
 
 struct Parser {
-    Token current;
-    Token previous;
     Scanner *scanner;
     Compiler *compiler;
 
@@ -109,6 +107,8 @@ struct Parser {
         initCompiler(compiler);
     };
 
+    Token current();
+    Token previous();
     void advance();
     bool match(TokenType type);
     bool check(TokenType type);
@@ -122,6 +122,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
+    FunctionInstantiation *getInstantiationFromStack(FunctionDeclaration *functionDeclaration, int argCount);
     FunctionInstantiation maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
     void beginScope();
     void endScope();
@@ -162,21 +163,21 @@ struct Parser {
         return compiler->function->chunk;
     }
     void emitByte(uint8_t byte) {
-        currentChunk().write(byte, previous.line);
+        currentChunk().write(byte, previous().line);
     }
     void emitByte(OpCode opcode) {
         emitByte(static_cast<uint8_t>(opcode));
     }
     void emitTwoBytes(uint16_t bytes) {
-        currentChunk().write((bytes << 8) & 0xff, previous.line);
-        currentChunk().write(bytes & 0xff, previous.line);
+        currentChunk().write((bytes << 8) & 0xff, previous().line);
+        currentChunk().write(bytes & 0xff, previous().line);
     }
 
     void errorAtCurrent(const std::string &message) {
-        errorAt(current, message);
+        errorAt(scanner->currentToken, message);
     }
     void error(const std::string &message) {
-        errorAt(previous, message);
+        errorAt(scanner->previousToken, message);
     }
 };
 
@@ -292,12 +293,19 @@ void Compiler::markInitialized() {
     locals.back().depth = scopeDepth;
 }
 
+Token Parser::current() {
+    return scanner->currentToken;
+}
+Token Parser::previous() {
+    return scanner->previousToken;
+}
+
 void Parser::advance() {
-    previous = current;
+    // previous = current;
     while (true) {
-        current = scanner->scanToken();
-        if (current.type == TokenType::Error) {
-            errorAtCurrent(std::string(current.text));
+        scanner->advanceToken();
+        if (current().type == TokenType::Error) {
+            errorAtCurrent(std::string(current().text));
             continue;
         }
         break;
@@ -311,11 +319,11 @@ bool Parser::match(TokenType type) {
     return true;
 }
 bool Parser::check(TokenType type) {
-    return current.type == type;
+    return current().type == type;
 }
 
 void Parser::consume(TokenType type, const std::string &message) {
-    if (current.type != type) {
+    if (current().type != type) {
         errorAtCurrent(message);
         return;
     }
@@ -323,11 +331,11 @@ void Parser::consume(TokenType type, const std::string &message) {
 }
 
 void Parser::consumeEndStatement(const std::string &message) {
-    if (current.type == TokenType::Semicolon || current.type == TokenType::Newline) {
+    if (current().type == TokenType::Semicolon || current().type == TokenType::Newline) {
         advance();
         return;
     }
-    if (current.type == TokenType::EOF_) {
+    if (current().type == TokenType::EOF_) {
         return;
     }
     
@@ -379,11 +387,11 @@ uint16_t Parser::makeConstant(Value value) {
 void Parser::synchronize() {
     panicMode = false;
 
-    while (current.type != TokenType::EOF_) {
-        if (previous.type == TokenType::Semicolon ||
-            previous.type == TokenType::Newline) return;
+    while (current().type != TokenType::EOF_) {
+        if (previous().type == TokenType::Semicolon ||
+            previous().type == TokenType::Newline) return;
 
-        switch (current.type) {
+        switch (current().type) {
             case TokenType::Class:
             case TokenType::Fun:
             case TokenType::Var:
@@ -403,7 +411,7 @@ void Parser::initCompiler(Compiler *compiler) {
     this->compiler = compiler;
     // TODO: Garbage collection
     if (compiler->type != CompilerType::Script) {
-        compiler->function->name = new ObjString(std::string(previous.text));
+        compiler->function->name = new ObjString(std::string(previous().text));
     }
 
     // I don't think we want to push the current function/top level script on the stack anymore
@@ -429,11 +437,7 @@ ObjFunction *Parser::endCompiler() {
     return function;
 }
 
-
-FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
-    Compiler *initialCompiler = this->compiler;
-    Scanner *initialScanner = this->scanner;
-
+FunctionInstantiation *Parser::getInstantiationFromStack(FunctionDeclaration *functionDeclaration, int argCount) {
     // slow as hell
     for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
         auto inst = &functionDeclaration->overloads[j];
@@ -441,20 +445,26 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
 
         bool isMatched = true;
         for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-            size_t end = initialCompiler->expressionTypeStack.size();
-            Type argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
+            size_t end = compiler->expressionTypeStack.size();
+            Type argumentType = compiler->expressionTypeStack[end - argCount + i];
             if (!typecheckIsAssignable(this, functionTypeObj->parameterTypes[i], argumentType)) {
                 isMatched = false; break;
             }
         }
-        if (isMatched) return *inst;
+        if (isMatched) return inst;
     }
+    return nullptr;
+}
+
+FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
+    Compiler *initialCompiler = this->compiler;
+    Scanner *initialScanner = this->scanner;
+
+    auto inst = getInstantiationFromStack(functionDeclaration, argCount);
+    if (inst) return *inst;
 
     Scanner tempScanner { initialScanner->source };
     scanner = &tempScanner;
-    
-    Token _previous = previous;
-    Token _current = current;
 
     scanner->current = functionDeclaration->blockStart;
     scanner->start = functionDeclaration->blockStart;
@@ -503,8 +513,6 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
     typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
 
     // Reset back
-    previous = _previous;
-    current = _current;
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
     return functionInst;
@@ -586,7 +594,7 @@ void Parser::emitLoop(int loopStart) {
 void Parser::parsePrecedence(Precedence precedence) {
     advance();
 
-    ParseFn prefixRule = getRule(previous.type).prefix;
+    ParseFn prefixRule = getRule(previous().type).prefix;
     if (!prefixRule) {
         error("Expect expression.");
         return;
@@ -597,9 +605,9 @@ void Parser::parsePrecedence(Precedence precedence) {
     
     (this->*prefixRule)(es);
 
-    while (precedence <= getRule(current.type).precedence) {
+    while (precedence <= getRule(current().type).precedence) {
         advance();
-        ParseFn infixRule = getRule(previous.type).infix;
+        ParseFn infixRule = getRule(previous().type).infix;
         (this->*infixRule)(es);
     }
 
@@ -611,7 +619,7 @@ void Parser::parsePrecedence(Precedence precedence) {
 
 void Parser::parseVariable(const std::string &errorMessage) {
     consume(TokenType::Identifier, errorMessage);
-    compiler->declareVariable(this, previous.text);
+    compiler->declareVariable(this, previous().text);
 }
 
 uint16_t Parser::identifierConstant(const std::string_view &name) {
@@ -775,12 +783,12 @@ void Parser::whileStatement() {
 
 void Parser::varDeclaration() {
     parseVariable("Expect variable name.");
-    Token nameToken = previous;
+    Token nameToken = previous();
 
     Type type = types::Void;
     if (match(TokenType::Colon)) {
         consume(TokenType::Identifier, "Expect type name after ':'.");
-        type = typeByName(this, previous.text);
+        type = typeByName(this, previous().text);
     }
 
     if (match(TokenType::Equal)) {
@@ -811,7 +819,7 @@ void Parser::block() {
 
 void Parser::funDeclaration() {
     consume(TokenType::Identifier, "Expect function name.");
-    auto name = previous.text;
+    auto name = previous().text;
     auto function = new ObjFunction();
     Compiler *enclosingCompiler = compiler;
     Compiler *functionCompiler = new Compiler(function, CompilerType::Function, compiler);
@@ -832,12 +840,12 @@ void Parser::funDeclaration() {
             }
 
             consume(TokenType::Identifier, "Expect parameter name.");
-            auto parameterName = previous.text;
+            auto parameterName = previous().text;
 
             Type argumentType = types::Unknown;
             if (match(TokenType::Colon)) {
                 consume(TokenType::Identifier, "Expect type name after ':'.");
-                argumentType = typeByName(this, previous.text);
+                argumentType = typeByName(this, previous().text);
             }
             // typecheckParameter(this, function, functionType, argumentType);
 
@@ -852,7 +860,7 @@ void Parser::funDeclaration() {
     Type returnType = types::Void;
     if (match(TokenType::Colon)) {
         consume(TokenType::Identifier, "Expect type name after ':'.");
-        returnType = typeByName(this, previous.text);
+        returnType = typeByName(this, previous().text);
     }
     // typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
@@ -877,10 +885,10 @@ void Parser::funDeclaration() {
 void Parser::number(ExpressionState es) {
     // https://stackoverflow.com/questions/11752705/does-stdstring-contain-null-terminator
     // Don't want to risk it - just convert to a new string instead
-    double value = strtod(std::string(previous.text).c_str(), nullptr);
+    double value = strtod(std::string(previous().text).c_str(), nullptr);
     emitDoubleConstant(value);
     typecheckNumber(this);
-    ast->number(previous);
+    ast->number(previous());
 }
 
 void Parser::grouping(ExpressionState es) {
@@ -889,7 +897,7 @@ void Parser::grouping(ExpressionState es) {
 }
 
 void Parser::unary(ExpressionState es) {
-    TokenType operatorType = previous.type;
+    TokenType operatorType = previous().type;
     
     expression();
 
@@ -902,8 +910,8 @@ void Parser::unary(ExpressionState es) {
 }
 
 void Parser::binary(ExpressionState es) {
-    TokenType operatorType = previous.type;
-    Token binaryToken = previous;
+    TokenType operatorType = previous().type;
+    Token binaryToken = previous();
 
     bool concatenation = false;
     if (operatorType == TokenType::Plus) {
@@ -953,7 +961,7 @@ void Parser::binary(ExpressionState es) {
 
 void Parser::literal(ExpressionState es) {
     typecheckLiteral(this);
-    switch (previous.type) {
+    switch (previous().type) {
         case TokenType::False: emitByte(OpCode::False); break;
         case TokenType::True: emitByte(OpCode::True); break;
         case TokenType::Nil: emitByte(OpCode::Nil); break;
@@ -964,18 +972,18 @@ void Parser::literal(ExpressionState es) {
 void Parser::string(ExpressionState es) {
     typecheckString(this);
 
-    auto str = previous.text;
+    auto str = previous().text;
     str.remove_prefix(1);
     str.remove_suffix(1);
     // TODO: Garbage collection
     auto objStr = new ObjString(std::string(str));
     emitConstant(objStr);
 
-    ast->string(previous);
+    ast->string(previous());
 }
 
 void Parser::and_(ExpressionState es) {
-    Token andToken = previous;
+    Token andToken = previous();
     int endJump = emitJump(OpCode::JumpIfFalse);
 
     int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
@@ -991,7 +999,7 @@ void Parser::and_(ExpressionState es) {
 }
 
 void Parser::or_(ExpressionState es) {
-    Token orToken = previous;
+    Token orToken = previous();
     int elseJump = emitJump(OpCode::JumpIfFalse);
     int endJump = emitJump(OpCode::Jump);
 
@@ -1048,11 +1056,11 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
 }
 
 void Parser::variable(ExpressionState es) {
-    namedVariable(previous.text, es);
+    namedVariable(previous().text, es);
 }
 
 void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
-    Token nameToken = previous;
+    Token nameToken = previous();
     FunctionDeclaration *functionDeclaration = compiler->resolveFunctionDeclaration(name);
 
     if (functionDeclaration != nullptr) {

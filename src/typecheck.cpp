@@ -145,7 +145,7 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
 }
 
 void typecheckLiteral(Parser *parser) {
-    switch (parser->previous.type) {
+    switch (parser->previous().type) {
         case TokenType::False:
             parser->compiler->expressionTypeStack.push_back(types::Bool);
             break;

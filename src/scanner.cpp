@@ -42,6 +42,10 @@ struct Scanner {
     int line = 1;
     int parens = 0;
 
+    Token currentToken = {};
+    Token previousToken = {};
+
+    void advanceToken();
     Token scanToken();
     void skipWhitespace();
     bool match(char expected);
@@ -162,6 +166,11 @@ Token Scanner::scanToken() {
     }
 
     return errorToken("Unexpected character.");
+}
+
+void Scanner::advanceToken() {
+    previousToken = currentToken;
+    currentToken = scanToken();
 }
 
 
