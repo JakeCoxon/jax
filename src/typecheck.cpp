@@ -1,11 +1,11 @@
 namespace TypeId {
-    int Void = 0;
-    int Number = 1;
-    int Bool = 2;
-    int String = 3;
-    int Dynamic = 4;
-    int Unknown = 5;
-    int Function = 6;
+    const int Void = 0;
+    const int Number = 1;
+    const int Bool = 2;
+    const int String = 3;
+    const int Dynamic = 4;
+    const int Unknown = 5;
+    const int Function = 6;
 }
 
 int slotSizeOfType(int type) {

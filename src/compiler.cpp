@@ -38,10 +38,13 @@ struct FunctionParameter {
     int type;
 };
 
+struct FunctionDeclaration;
+
 struct FunctionInstantiation {
     int type;
     Value function = mpark::monostate();
     Compiler *compiler = nullptr;
+    FunctionDeclaration *declaration = nullptr;
 };
 
 struct FunctionDeclaration {
@@ -66,7 +69,7 @@ struct Compiler {
     Compiler *enclosing;
     std::vector<Local> locals;
     std::vector<int> expressionTypeStack;
-    std::vector<FunctionDeclaration> functionDeclarations;
+    std::vector<FunctionDeclaration*> functionDeclarations;
 
     int scopeDepth = 0;
     int nextStackSlot = 0;
@@ -97,6 +100,8 @@ using Type = mpark::variant<
     GenericType, FunctionTypeObj
 >;
 
+struct AstGen;
+
 struct Parser {
     Token current;
     Token previous;
@@ -105,11 +110,13 @@ struct Parser {
 
     std::vector<Type> types;
 
+    AstGen *ast;
+
     bool hadError = false;
     bool panicMode = false;
 
-    Parser(Scanner *scanner, Compiler *compiler):
-            scanner(scanner), compiler(compiler) {
+    Parser(Scanner *scanner, Compiler *compiler, AstGen *ast):
+            scanner(scanner), compiler(compiler), ast(ast) {
         initCompiler(compiler);
     };
 
@@ -126,7 +133,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    Value maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
+    FunctionInstantiation maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
     void beginScope();
     void endScope();
 
@@ -185,6 +192,7 @@ struct Parser {
 };
 
 #include "typecheck.cpp"
+#include "ast.cpp"
 
 using ParseFn = void (Parser::*)(ExpressionState);
 
@@ -213,17 +221,22 @@ void registerNative(
     auto native = new ObjNative{typeId, nativeFn};
     // TODO: garbage collection
     auto functionName = new ObjString{name};
-    auto inst = FunctionInstantiation{typeId, native};
-    parser->compiler->functionDeclarations.push_back({
-        functionName->text, parameters, returnType, false, nullptr, {inst}, 0, 0, 0
-    });
+    FunctionInstantiation inst = {typeId, native};
+    // TODO: This is broken for some reason
+    // FunctionDeclaration *decl = new FunctionDeclaration {
+    //     functionName->text, parameters, returnType, false, nullptr, {inst}, 0, 0, 0
+    // };
+    // inst.declaration = decl;
+    // parser->compiler->functionDeclarations.push_back(decl);
 }
 
 ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
+    AstGen ast;
     Compiler compiler(function, FunctionType::Script, nullptr);
-    Parser parser { &scanner, &compiler };
+    Parser parser { &scanner, &compiler, &ast };
+    ast.parser = &parser;
     typecheckInit(&parser);
 
     registry(&parser);
@@ -238,6 +251,9 @@ ObjFunction *compile(const std::string &source) {
     }
 
     parser.endCompiler();
+
+    generateCodeC(&ast);
+    
     return parser.hadError ? nullptr : function;
 
 }
@@ -258,8 +274,8 @@ int Compiler::resolveLocal(const std::string_view &name) {
 
 FunctionDeclaration *Compiler::resolveFunctionDeclaration(const std::string_view &name) {
     for (size_t i = 0; i < functionDeclarations.size(); i++) {
-        if (functionDeclarations[i].name == name) {
-            return &functionDeclarations[i];
+        if (functionDeclarations[i]->name == name) {
+            return functionDeclarations[i];
         }
     }
     if (enclosing) { return enclosing->resolveFunctionDeclaration(name); }
@@ -425,7 +441,7 @@ ObjFunction *Parser::endCompiler() {
 }
 
 
-Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
+FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
 
@@ -442,7 +458,7 @@ Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDec
                 isMatched = false; break;
             }
         }
-        if (isMatched) return inst->function;
+        if (isMatched) return *inst;
     }
 
     Scanner tempScanner { initialScanner->source };
@@ -463,13 +479,16 @@ Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDec
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
     this->compiler = compiler;
-    compiler->compiled = true;
+    compiler->compiled = true; // Mark this so we don't recurse
 
-    functionDeclaration->overloads.push_back({
-        functionType, newFunction, compiler
-    });
+    FunctionInstantiation functionInst = {
+        functionType, newFunction, compiler, functionDeclaration
+    };
+    functionDeclaration->overloads.push_back(functionInst);
 
     beginScope();
+    ast->beginFunctionDeclaration(functionInst);
+    
     // TODO: Garbage collection
     compiler->function->name = new ObjString(std::string(functionDeclaration->name));
     compiler->function->arity = functionDeclaration->parameters.size();
@@ -490,6 +509,7 @@ Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDec
     typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
 
     block();
+    ast->endFunctionDeclaration();
     endCompiler();
     typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
 
@@ -498,7 +518,7 @@ Value Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDec
     current = _current;
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
-    return newFunction;
+    return functionInst;
 }
 
 void Parser::beginScope() {
@@ -634,7 +654,9 @@ void Parser::statement() {
         whileStatement();
     } else if (match(TokenType::LeftBrace)) {
         beginScope();
+        ast->beginBlock();
         block();
+        ast->endBlock();
         endScope();
     } else {
         expressionStatement();
@@ -672,6 +694,8 @@ void Parser::printStatement() {
     
     emitByte(OpCode::Print);
     emitByte(argCount);
+
+    ast->print();
 }
 
 void Parser::returnStatement() {
@@ -681,11 +705,13 @@ void Parser::returnStatement() {
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
         emitReturn();
         typecheckReturnNil(this, compiler->function);
+        ast->returnStatement(true);
     } else {
         expression();
         consumeEndStatement("Expect ';' or newline after return value");
         emitByte(OpCode::Return);
         typecheckReturn(this, compiler->function);
+        ast->returnStatement(false);
     }
 
 }
@@ -696,6 +722,8 @@ void Parser::expressionStatement() {
     emitByte(OpCode::Pop);
     emitByte(slotSizeOfType(compiler->expressionTypeStack.back()));
     typecheckEndStatement(this);
+
+    ast->exprStatement();
 }
 
 void Parser::ifStatement() {
@@ -708,7 +736,9 @@ void Parser::ifStatement() {
     emitByte(OpCode::Pop);
     emitByte(conditionSlots);
     beginScope();
+    ast->beginBlock();
     block();
+    ast->endBlock();
     endScope();
 
     int elseJump = emitJump(OpCode::Jump);
@@ -719,7 +749,9 @@ void Parser::ifStatement() {
 
     if (match(TokenType::Else)) {
         beginScope();
+        ast->beginBlock();
         block();
+        ast->endBlock();
         endScope();
     }
     patchJump(elseJump);
@@ -739,7 +771,9 @@ void Parser::whileStatement() {
     emitByte(conditionSlots);
 
     beginScope();
+    ast->beginBlock();
     block();
+    ast->endBlock();
     endScope();
 
     emitLoop(loopStart);
@@ -752,6 +786,7 @@ void Parser::whileStatement() {
 
 void Parser::varDeclaration() {
     parseVariable("Expect variable name.");
+    Token nameToken = previous;
 
     int type = -1;
     if (match(TokenType::Colon)) {
@@ -768,6 +803,8 @@ void Parser::varDeclaration() {
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     compiler->markInitialized();
+
+    ast->varDeclaration(nameToken);
 }
 
 void Parser::expression() {
@@ -831,9 +868,10 @@ void Parser::funDeclaration() {
     // typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
-    enclosingCompiler->functionDeclarations.push_back(FunctionDeclaration{ 
+    auto decl = new FunctionDeclaration { 
         name, parameters, returnType, polymorphic, enclosingCompiler, {}, constant, scanner->start, scanner->line
-    });
+    };
+    enclosingCompiler->functionDeclarations.push_back(decl);
 
     int braces = 0;
     while ((braces > 0 || !check(TokenType::RightBrace)) && !check(TokenType::EOF_)) {
@@ -853,6 +891,7 @@ void Parser::number(ExpressionState es) {
     double value = strtod(std::string(previous.text).c_str(), nullptr);
     emitDoubleConstant(value);
     typecheckNumber(this);
+    ast->number(previous);
 }
 
 void Parser::grouping(ExpressionState es) {
@@ -875,6 +914,7 @@ void Parser::unary(ExpressionState es) {
 
 void Parser::binary(ExpressionState es) {
     TokenType operatorType = previous.type;
+    Token binaryToken = previous;
 
     bool concatenation = false;
     if (operatorType == TokenType::Plus) {
@@ -918,6 +958,8 @@ void Parser::binary(ExpressionState es) {
         default: break;
     }
 
+    ast->infix(binaryToken);
+
 }
 
 void Parser::literal(ExpressionState es) {
@@ -939,9 +981,12 @@ void Parser::string(ExpressionState es) {
     // TODO: Garbage collection
     auto objStr = new ObjString(std::string(str));
     emitConstant(objStr);
+
+    ast->string(previous);
 }
 
 void Parser::and_(ExpressionState es) {
+    Token andToken = previous;
     int endJump = emitJump(OpCode::JumpIfFalse);
 
     int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
@@ -952,9 +997,12 @@ void Parser::and_(ExpressionState es) {
 
     patchJump(endJump);
     typecheckAnd(this);
+
+    ast->infix(andToken);
 }
 
 void Parser::or_(ExpressionState es) {
+    Token orToken = previous;
     int elseJump = emitJump(OpCode::JumpIfFalse);
     int endJump = emitJump(OpCode::Jump);
 
@@ -966,6 +1014,8 @@ void Parser::or_(ExpressionState es) {
     parsePrecedence(Precedence::Or);
     patchJump(endJump);
     typecheckOr(this);
+
+    ast->infix(orToken);
 }
 
 uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
@@ -994,16 +1044,18 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     // emitByte(0xFF);
     size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
-    Value function = maybeCompileFunctionInstantiation(functionDeclaration, argCount);
+    FunctionInstantiation inst = maybeCompileFunctionInstantiation(functionDeclaration, argCount);
 
-    uint16_t constant = makeConstant(function);
+    uint16_t constant = makeConstant(inst.function);
     assert(constant < 256);
     // currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
     // currentChunk().code[patchIndex] = constant & 0xff;
     
-    typecheckEndFunctionCall(this, function, argCount);
+    typecheckEndFunctionCall(this, inst.function, argCount);
     emitByte(OpCode::Call);
     emitByte(constant);
+
+    ast->functionCall(inst, argCount);
 }
 
 void Parser::variable(ExpressionState es) {
@@ -1011,6 +1063,7 @@ void Parser::variable(ExpressionState es) {
 }
 
 void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
+    Token nameToken = previous;
     FunctionDeclaration *functionDeclaration = compiler->resolveFunctionDeclaration(name);
 
     if (functionDeclaration != nullptr) {
@@ -1048,9 +1101,13 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
                 expression();
                 emitByte(setOp); emitByte((uint8_t)stackOffset);
                 typecheckAssign(this, arg);
+
+                ast->assignment(nameToken);
             } else {
                 emitByte(getOp); emitByte((uint8_t)stackOffset);
                 typecheckVariable(this, arg);
+
+                ast->variable(nameToken);
             }
         } else {
             error("No variable found.");

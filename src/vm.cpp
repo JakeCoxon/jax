@@ -211,7 +211,8 @@ InterpretResult VM::interpret(const std::string &source) {
     // push<double>(0);
     frames.push_back(CallFrame { function, 0, 0 });
 
-    InterpretResult result = run();
+    // InterpretResult result = run();
+    InterpretResult result = InterpretResult::Ok;
     return result;
 }
 
