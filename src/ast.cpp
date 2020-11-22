@@ -40,7 +40,8 @@ struct NumberLiteral {
     Token name;
 };
 struct BooleanLiteral {
-    Token name;
+    Expr expr;
+    bool value;
 };
 
 struct AssignmentExpr {
@@ -84,6 +85,9 @@ struct PrintStatement {
 };
 struct IfStatement {
     Statement stmt;
+    Expr *expr = nullptr;
+    Declaration *firstDeclaration = nullptr;
+    Declaration *firstElseDeclaration = nullptr;
 };
 struct ReturnStatement {
     Statement stmt;
@@ -91,6 +95,8 @@ struct ReturnStatement {
 };
 struct WhileStatement {
     Statement stmt;
+    Expr *expr = nullptr;
+    Declaration *firstDeclaration = nullptr;
 };
 struct Block {
     Statement stmt;
@@ -164,7 +170,7 @@ struct CodeGen {
             }
             
             case ExprKind::Boolean: {
-                ss << ((BooleanLiteral*)expr)->name.text;
+                ss << (((BooleanLiteral*)expr)->value ? "true" : "false");
                 break;
             }
             
@@ -209,24 +215,49 @@ struct CodeGen {
         switch (stmt->kind) {
             case StmtKind::Print: {
                 ss << "printf(\"";
-                Type type = ((PrintStatement*)stmt)->argument->type;
+                auto print = (PrintStatement*)stmt;
+                Type type = print->argument->type;
                 if (type == types::Number) ss << "%f";
                 else if (type == types::String) ss << "%s";
-                else if (type == types::Bool) ss << "%i";
+                else if (type == types::Bool) ss << "%s";
                 ss << "\\n\", ";
-                addExpr(((PrintStatement*)stmt)->argument, false);
+                if (type == types::Bool) { 
+                    ss << "("; addExpr(print->argument, false); ss << " ? \"true\" : \"false\")";
+                } else { addExpr(print->argument, false); }
                 ss << ")";
+                ss << ";" << endl;
                 break;
             }
             case StmtKind::If: {
+                auto ifStmt = (IfStatement*)stmt;
+                ss << "if (";
+                addExpr(ifStmt->expr, false);
+                ss << ") {" << endl;
+                indent ++; addDecls(ifStmt->firstDeclaration); indent --;
+                if (ifStmt->firstElseDeclaration) {
+                    addIndent();
+                    ss << "} else {" << endl;
+                    indent ++; addDecls(ifStmt->firstElseDeclaration); indent --;
+                }
+                addIndent();
+                ss << "}" << endl;
+
                 break;
             }
             case StmtKind::Return: {
                 ss << "return ";
                 addExpr(((ReturnStatement*)stmt)->expr, false);
+                ss << ";" << endl;
                 break;
             }
             case StmtKind::While: {
+                auto whileStmt = (WhileStatement*)stmt;
+                ss << "while (";
+                addExpr(whileStmt->expr, false);
+                ss << ") {" << endl;
+                indent ++; addDecls(whileStmt->firstDeclaration); indent --;
+                addIndent();
+                ss << "}" << endl;
                 break;
             }
             case StmtKind::Block: {
@@ -235,11 +266,12 @@ struct CodeGen {
                 addDecls(((Block*)stmt)->firstDeclaration);
                 indent --;
                 addIndent();
-                ss << "}";
+                ss << "}" << endl;
                 break;
             }
             case StmtKind::Expr: {
                 addExpr(((ExprStatement*)stmt)->expr);
+                ss << ";" << endl;
                 break;
             }
         }
@@ -263,7 +295,6 @@ struct CodeGen {
             case DeclKind::Stmt: {
                 addIndent();
                 addStmt((Statement*)decl);
-                ss << ";" << endl;
                 break;
             }
         }
@@ -271,6 +302,9 @@ struct CodeGen {
 
     void addTypedefs() {
         ss << "#include <stdio.h>" << endl;
+        ss << "#define true 1" << endl;
+        ss << "#define false 0" << endl;
+        ss << "typedef int bool;" << endl;
         ss << "typedef char* string;" << endl;
         ss << endl;
     }
@@ -336,6 +370,13 @@ struct AstGen {
         var->name = name;
         expressionStack.push_back(&var->expr);
     }
+    void booleanLiteral(bool value) {
+        auto b = new BooleanLiteral;
+        b->expr.type = parser->compiler->expressionTypeStack.back();
+        b->expr.kind = ExprKind::Boolean;
+        b->value = value;
+        expressionStack.push_back(&b->expr);
+    }
 
     void assignment(Token name) {
         auto assgn = new AssignmentExpr;
@@ -393,6 +434,33 @@ struct AstGen {
         *nextDeclarationStack.back() = &exprStmt->stmt.decl;
         nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
     }
+
+    IfStatement *beginIfStatementBlock() {
+        auto ifStmt = new IfStatement;
+        ifStmt->stmt.decl.kind = DeclKind::Stmt;
+        ifStmt->stmt.kind = StmtKind::If;
+        ifStmt->expr = popExpression();
+
+        *nextDeclarationStack.back() = &ifStmt->stmt.decl;
+        nextDeclarationStack.back() = &ifStmt->stmt.decl.nextSibling;
+
+        nextDeclarationStack.push_back(&ifStmt->firstDeclaration);
+        return ifStmt;
+    }
+    void beginElseBlock(IfStatement *ifStmt) {
+        nextDeclarationStack.push_back(&ifStmt->firstElseDeclaration);
+    }
+
+    void beginWhileStatementBlock() {
+        auto whileStmt = new WhileStatement;
+        whileStmt->stmt.decl.kind = DeclKind::Stmt;
+        whileStmt->stmt.kind = StmtKind::While;
+        whileStmt->expr = popExpression();
+
+        *nextDeclarationStack.back() = &whileStmt->stmt.decl;
+        nextDeclarationStack.back() = &whileStmt->stmt.decl.nextSibling;
+        nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
+    }
     
     void varDeclaration(Token name) {
         auto varDecl = new VarDeclaration;
@@ -443,7 +511,7 @@ struct AstGen {
     }
 };
 
-void generateCodeC(AstGen *astGen) {
+std::string generateCodeC(AstGen *astGen) {
     CodeGen codeGen;
     codeGen.parser = astGen->parser;
     
@@ -451,5 +519,5 @@ void generateCodeC(AstGen *astGen) {
     codeGen.addFunctions(astGen->functionInstantiations);
     codeGen.addMain(astGen->initialDeclaration);
 
-    std::cout << codeGen.ss.str();
+    return codeGen.ss.str();
 }

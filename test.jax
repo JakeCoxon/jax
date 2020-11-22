@@ -2,32 +2,43 @@
 var apple = 5
 var thing = "monkey"
 var banana = 4 + (apple + 2) / 3 - 2
-print(banana)
+// print(banana)
 
-banana = banana - 1
-print(banana)
+// banana = banana - 1
+// print(banana)
 
-// print(thing == "monkey")
-// print(thing + "_something")
+// // print(thing == "monkey")
+// // print(thing + "_something")
 
-print(thing)
+// print(thing)
 
-{
-	banana = 2
-}
-
-// fun hello(x: number, y: bool, z: string) {
-//   print(x)
-//   print(y)
-//   print(z)
+// {
+// 	banana = 3
 // }
-// hello(2, apple < 40, thing)
 
-fun things(a, b): number {
-  return 123 + a * b
+fun hello(x: number, y: bool, z: string) {
+  print(x)
+  print(y)
+  print(z)
+}
+hello(2, apple < 40, thing)
+
+// fun things(a, b): number {
+//   return 123 + a * b
+// }
+
+if true {
+	print("Yes")
+} else {
+	print("Banana")
 }
 
-print(things(5, 6))
+while banana > 0 {
+	banana = banana - 1
+	print(banana)
+}
+
+// print(things(5, 6))
 // things("asd", "asd")
 // print(200 + things(true, 6))
 

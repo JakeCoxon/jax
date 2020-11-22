@@ -248,6 +248,32 @@ ObjFunction *compile(const std::string &source) {
 
 }
 
+std::string compileToString(const std::string &source) {
+    Scanner scanner { source };
+    auto function = new ObjFunction();
+    AstGen ast;
+    Compiler compiler(function, CompilerType::Script, nullptr);
+    Parser parser { &scanner, &compiler, &ast };
+    ast.parser = &parser;
+    typecheckInit(&parser);
+
+    registry(&parser);
+
+
+    parser.advance();
+
+    while (!parser.match(TokenType::EOF_)) {
+        while (parser.match(TokenType::Newline)) {}
+        parser.declaration();
+        while (parser.match(TokenType::Newline)) {}
+    }
+
+    parser.endCompiler();
+
+    return generateCodeC(&ast);
+    
+}
+
 int Compiler::resolveLocal(const std::string_view &name) {
     for (int i = locals.size() - 1; i >= 0; i--) {
         Local* local = &locals[i];
@@ -733,7 +759,7 @@ void Parser::ifStatement() {
     emitByte(OpCode::Pop);
     emitByte(conditionSlots);
     beginScope();
-    ast->beginBlock();
+    auto ifStmtAst = ast->beginIfStatementBlock();
     block();
     ast->endBlock();
     endScope();
@@ -745,8 +771,10 @@ void Parser::ifStatement() {
     emitByte(conditionSlots);
 
     if (match(TokenType::Else)) {
+        consume(TokenType::LeftBrace, "Expect '{' after if.");
+
         beginScope();
-        ast->beginBlock();
+        ast->beginElseBlock(ifStmtAst);
         block();
         ast->endBlock();
         endScope();
@@ -768,7 +796,7 @@ void Parser::whileStatement() {
     emitByte(conditionSlots);
 
     beginScope();
-    ast->beginBlock();
+    ast->beginWhileStatementBlock();
     block();
     ast->endBlock();
     endScope();
@@ -962,9 +990,18 @@ void Parser::binary(ExpressionState es) {
 void Parser::literal(ExpressionState es) {
     typecheckLiteral(this);
     switch (previous().type) {
-        case TokenType::False: emitByte(OpCode::False); break;
-        case TokenType::True: emitByte(OpCode::True); break;
-        case TokenType::Nil: emitByte(OpCode::Nil); break;
+        case TokenType::False: 
+            emitByte(OpCode::False);
+            ast->booleanLiteral(false);
+            break;
+        case TokenType::True: 
+            emitByte(OpCode::True);
+            ast->booleanLiteral(true);
+            break;
+        case TokenType::Nil: 
+            emitByte(OpCode::Nil);
+            ast->booleanLiteral(false);
+            break;
         default: return;
     }
 }

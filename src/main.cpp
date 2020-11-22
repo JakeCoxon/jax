@@ -2,6 +2,7 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <stdlib.h>
 
 #include "scanner.cpp"
 #include "value.cpp"
@@ -28,12 +29,27 @@ std::string readFile(const std::string &path) {
     return contents;
 }
 
+// static void runFile(VM &vm, const std::string &path) {
+//     std::string source = readFile(path);
+//     InterpretResult result = vm.interpret(source);
+
+//     if (result == InterpretResult::CompileError) exit(65);
+//     if (result == InterpretResult::RuntimeError) exit(70);
+// }
+
 static void runFile(VM &vm, const std::string &path) {
     std::string source = readFile(path);
-    InterpretResult result = vm.interpret(source);
+    std::string output = compileToString(source);
 
-    if (result == InterpretResult::CompileError) exit(65);
-    if (result == InterpretResult::RuntimeError) exit(70);
+    std::cout << output << std::endl;
+
+    std::ofstream myfile;
+    myfile.open("output.c");
+    myfile << output;
+    myfile.close();
+
+    system("clang output.c -o output");
+    system("./output");
 }
 
 static void repl(VM &vm) {
