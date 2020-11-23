@@ -272,7 +272,7 @@ void typecheckReturn(Parser *parser, ObjFunction *function) {
 }
 void typecheckReturnNil(Parser *parser, ObjFunction *function) {
     Type returnStatementType = parser->compiler->expressionTypeStack.back();
-    auto functionTypeObj = returnStatementType->functionTypeData();
+    auto functionTypeObj = function->type->functionTypeData();
     if (!typecheckIsAssignable(parser, functionTypeObj->returnType, types::Void)) {
         parser->error("Type mismatch");
     }

@@ -55,6 +55,8 @@ struct FunctionDeclaration {
 
     Compiler *enclosingCompiler;
     std::vector<FunctionInstantiation> overloads;
+
+    bool isExtern = false;
     
     size_t constant;
     size_t blockStart;
@@ -483,27 +485,18 @@ FunctionInstantiation *Parser::getInstantiationFromStack(FunctionDeclaration *fu
 }
 
 FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
+    
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
 
     auto inst = getInstantiationFromStack(functionDeclaration, argCount);
     if (inst) return *inst;
 
-    Scanner tempScanner { initialScanner->source };
-    scanner = &tempScanner;
-
-    scanner->current = functionDeclaration->blockStart;
-    scanner->start = functionDeclaration->blockStart;
-    scanner->line = functionDeclaration->blockLine;
-    scanner->parens = 0;
-    advance();
-
     // TODO: Garbage collection
     auto newFunction = new ObjFunction();
     Compiler *compiler = new Compiler(newFunction, CompilerType::Function, functionDeclaration->enclosingCompiler);
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
-    this->compiler = compiler;
     compiler->compiled = true; // Mark this so we don't recurse
 
     FunctionInstantiation functionInst = {
@@ -511,36 +504,55 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
     };
     functionDeclaration->overloads.push_back(functionInst);
 
-    beginScope();
-    ast->beginFunctionDeclaration(functionInst);
+    if (functionDeclaration->isExtern) {
+        typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
+    } else {
+        
+        beginScope();
+        ast->beginFunctionDeclaration(functionInst);
+        
+        this->compiler = compiler;
+        
+        // TODO: Garbage collection
+        compiler->function->name = new ObjString(std::string(functionDeclaration->name));
+        compiler->function->arity = functionDeclaration->parameters.size();
+
+        // I don't think we want to push the current function/top level script on the stack anymore
+        // compiler->locals.push_back(Local("", 0, 0)); // Function object
+        // compiler->nextStackSlot += 2;
+
+        newFunction->argSlots = 0;
+        for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
+            compiler->declareVariable(this, functionDeclaration->parameters[i].name);
+            compiler->markInitialized();
+            size_t end = initialCompiler->expressionTypeStack.size();
+            Type argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
+            typecheckParameter(this, newFunction, functionType, argumentType);
+        }
+
+        typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
     
-    // TODO: Garbage collection
-    compiler->function->name = new ObjString(std::string(functionDeclaration->name));
-    compiler->function->arity = functionDeclaration->parameters.size();
+        
+        
+        Scanner tempScanner { initialScanner->source };
+        scanner = &tempScanner;
 
-    // I don't think we want to push the current function/top level script on the stack anymore
-    // compiler->locals.push_back(Local("", 0, 0)); // Function object
-    // compiler->nextStackSlot += 2;
+        scanner->current = functionDeclaration->blockStart;
+        scanner->start = functionDeclaration->blockStart;
+        scanner->line = functionDeclaration->blockLine;
+        scanner->parens = 0;
+        advance();
+        
+        block();
+        ast->endFunctionDeclaration();
+        endCompiler();
 
-    newFunction->argSlots = 0;
-    for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-        compiler->declareVariable(this, functionDeclaration->parameters[i].name);
-        compiler->markInitialized();
-        size_t end = initialCompiler->expressionTypeStack.size();
-        Type argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
-        typecheckParameter(this, newFunction, functionType, argumentType);
+        // Reset back
+        this->scanner = initialScanner;
+        this->compiler = initialCompiler;
     }
 
-    typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
-
-    block();
-    ast->endFunctionDeclaration();
-    endCompiler();
     typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
-
-    // Reset back
-    this->scanner = initialScanner;
-    this->compiler = initialCompiler;
     return functionInst;
 }
 
@@ -892,11 +904,35 @@ void Parser::funDeclaration() {
     }
     // typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
-    consume(TokenType::LeftBrace, "Expect '{' before function body.");
-    auto decl = new FunctionDeclaration { 
-        name, parameters, returnType, polymorphic, enclosingCompiler, {}, constant, scanner->start, scanner->line
-    };
+
+    auto decl = new FunctionDeclaration;
+    decl->name = name;
+    decl->parameters = parameters;
+    decl->returnType = returnType;
+    decl->polymorphic = polymorphic;
+    decl->enclosingCompiler = enclosingCompiler;
+    decl->isExtern = false;
+    decl->constant = constant;
+    decl->blockStart = scanner->start;
+    decl->blockLine = scanner->line;
     enclosingCompiler->functionDeclarations.push_back(decl);
+
+    if (match(TokenType::At)) {
+        consume(TokenType::Identifier, "Expect name after '@'.");
+        if (previous().text == "extern") {
+            decl->isExtern = true;
+        } else {
+            error("Unrecognised at-name");
+            return;
+        }
+    }
+    
+    if (decl->isExtern) return;
+
+    consume(TokenType::LeftBrace, "Expect '{' before function body.");
+
+    decl->blockStart = scanner->start;
+    decl->blockLine = scanner->line;
 
     int braces = 0;
     while ((braces > 0 || !check(TokenType::RightBrace)) && !check(TokenType::EOF_)) {
@@ -1162,6 +1198,7 @@ ParseRule rules[] = {
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Slash
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Star
     {nullptr,           nullptr,           Precedence::None},       // Colon
+    {nullptr,           nullptr,           Precedence::None},       // At
     {&Parser::unary,    nullptr,           Precedence::None},       // Bang
     {nullptr,           &Parser::binary,   Precedence::Equality},   // BangEqual
     {nullptr,           nullptr,           Precedence::None},       // Equal

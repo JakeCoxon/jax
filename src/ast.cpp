@@ -200,7 +200,7 @@ struct CodeGen {
                 ss << "(";
                 size_t i = 0; 
                 for (Expr *arg : call->arguments) {
-                    addExpr(arg);
+                    addExpr(arg, false);
                     if (i < call->arguments.size() - 1) {
                         ss << ", ";
                     }
@@ -245,8 +245,9 @@ struct CodeGen {
                 break;
             }
             case StmtKind::Return: {
+                auto ret = (ReturnStatement*)stmt;
                 ss << "return ";
-                addExpr(((ReturnStatement*)stmt)->expr, false);
+                if (ret->expr) addExpr(ret->expr, false);
                 ss << ";" << endl;
                 break;
             }
@@ -301,11 +302,13 @@ struct CodeGen {
     }
 
     void addTypedefs() {
+        ss << "#include <time.h>" << endl;
         ss << "#include <stdio.h>" << endl;
         ss << "#define true 1" << endl;
         ss << "#define false 0" << endl;
         ss << "typedef int bool;" << endl;
         ss << "typedef char* string;" << endl;
+        ss << "double clock_seconds() { return (double)clock() / CLOCKS_PER_SEC; }" << endl;
         ss << endl;
     }
     
