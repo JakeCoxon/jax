@@ -16,7 +16,7 @@ enum class TokenType {
     Identifier, String, Number,
 
     // Keywords.
-    And, Class, Else, False,
+    And, Struct, Else, False,
     For, Fun, If, Nil, Or,
     Print, Return, Super, This,
     True, Var, While,
@@ -186,7 +186,6 @@ TokenType Scanner::checkKeyword(size_t offset, const std::string &rest, TokenTyp
 TokenType Scanner::identifierType() {
     switch (source[start]) {
         case 'a': return checkKeyword(1, "nd", TokenType::And);
-        case 'c': return checkKeyword(1, "lass", TokenType::Class);
         case 'e': return checkKeyword(1, "lse", TokenType::Else);
         case 'f': 
             if (current - start > 1) {
@@ -202,7 +201,13 @@ TokenType Scanner::identifierType() {
         case 'o': return checkKeyword(1, "r", TokenType::Or);
         case 'p': return checkKeyword(1, "rint", TokenType::Print);
         case 'r': return checkKeyword(1, "eturn", TokenType::Return);
-        case 's': return checkKeyword(1, "uper", TokenType::Super);
+        case 's': 
+            if (current - start > 1) {
+                switch (source[start + 1]) {
+                    case 'u': return checkKeyword(2, "per", TokenType::Super);
+                    case 't': return checkKeyword(2, "ruct", TokenType::Struct);
+                }
+            }
         case 't': 
             if (current - start > 1) {
                 switch (source[start + 1]) {

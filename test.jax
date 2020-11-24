@@ -1,5 +1,4 @@
 
-fun clock(): number @extern
 fun clock_seconds(): number @extern
 
 var start = clock_seconds()
@@ -43,7 +42,11 @@ while banana > 0 {
 	print(banana)
 }
 
-
+struct person {
+  cool: thing
+  firstname: string
+  lastname: string
+}
 
 // print(things(5, 6))
 // things("asd", "asd")
@@ -58,13 +61,15 @@ while banana > 0 {
 // compare("hello", "jello")
 // compare(5, 5)
 
-fun xxx(y) {
- if true {
-   return
- }
- xxx(y - 1)
-}
-xxx(1)
+// fun test_thing(thing): placeholder {
+//  static if typeof(thing) == string {
+//    static function.return_type = string;
+//    print("Okay")
+//  } else if (typeof(thing) == number) {
+//   print("Whatever")
+//  }
+// }
+// test_thing(100)
 
 fun fib(n): number {
  if n < 2 {

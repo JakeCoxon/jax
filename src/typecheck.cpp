@@ -8,41 +8,38 @@ int slotSizeOfType(Type type) {
 }
 
 Type typeByName(Parser *parser, const std::string_view &name) {
-    Type type = types::Void;
-    if (name == "void") {
-        type = types::Void;
-    } else if (name == "number") {
-        type = types::Number;
-    } else if (name == "bool") {
-        type = types::Bool;
-    } else if (name == "string") {
-        type = types::String;
-    } else if (name == "dynamic") {
-        type = types::Dynamic;
-    } else {
+    auto it = parser->typesByName.find(std::string(name));
+    if (it == parser->typesByName.end()) {
         std::string err = "Unknown type: ";
         err += name;
         parser->error(err);
     }
-    return type;
+    return it->second;
 }
 
-int addNewType(Parser *parser, PrimitiveTypeData primData) {
-    parser->types.push_back(new TypeData{ parser->types.size(), PrimitiveTypeData(primData)});
-    return parser->types.size() - 1;
+template<typename T>
+void addNewType(Parser *parser, T typeData) {
+    parser->types.push_back(new TypeData{ parser->types.size(), T(typeData)});
 }
-int addNewType(Parser *parser, FunctionTypeData funcData) {
-    parser->types.push_back(new TypeData{ parser->types.size(), FunctionTypeData(funcData)});
-    return parser->types.size() - 1;
+template<typename T>
+void addNamedType(Parser *parser, const std::string &name, T typeData) {
+    addNewType(parser, typeData);
+    parser->typesByName[name] = parser->types.back();
 }
 
 void typecheckInit(Parser *parser) {
     parser->types.push_back(types::Void); // Void
+    parser->typesByName["void"] = parser->types.back();
     parser->types.push_back(types::Number); // Number
+    parser->typesByName["number"] = parser->types.back();
     parser->types.push_back(types::Bool); // Bool
+    parser->typesByName["bool"] = parser->types.back();
     parser->types.push_back(types::String); // String
+    parser->typesByName["string"] = parser->types.back();
     parser->types.push_back(types::Dynamic); // Dynamic
+    parser->typesByName["dynamic"] = parser->types.back();
     parser->types.push_back(types::Unknown); // Unknown
+    parser->typesByName["unknown"] = parser->types.back();
     parser->types.push_back(types::Function); // Function placeholder
 }
 

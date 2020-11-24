@@ -1,5 +1,6 @@
 #include <vector>
 #include <string>
+#include <map>
 
 #define UINT8_COUNT (UINT8_MAX + 1)
 
@@ -98,6 +99,7 @@ struct Parser {
     Compiler *compiler;
 
     std::vector<Type> types;
+    std::map<std::string, Type> typesByName;
 
     AstGen *ast;
 
@@ -147,6 +149,7 @@ struct Parser {
     void expression();
     void block();
     void funDeclaration();
+    void structDeclaration();
 
     void number(ExpressionState es);
     void grouping(ExpressionState es);
@@ -420,7 +423,7 @@ void Parser::synchronize() {
             previous().type == TokenType::Newline) return;
 
         switch (current().type) {
-            case TokenType::Class:
+            case TokenType::Struct:
             case TokenType::Fun:
             case TokenType::Var:
             case TokenType::For:
@@ -671,6 +674,8 @@ void Parser::declaration() {
         funDeclaration();
     } else if (match(TokenType::Var)) {
         varDeclaration();
+    } else if (match(TokenType::Struct)) {
+        structDeclaration();
     } else {
         statement();
     }
@@ -946,6 +951,37 @@ void Parser::funDeclaration() {
 }
 
 
+void Parser::structDeclaration() {
+    consume(TokenType::Identifier, "Expect struct name.");
+    
+    StructTypeData typeData;
+    typeData.name = previous().text;
+
+    consume(TokenType::LeftBrace, "Expect '{' after struct name.");
+    while (true) {
+        while (match(TokenType::Semicolon) || match(TokenType::Newline)) {
+            continue;
+        }
+        if (match(TokenType::Identifier)) {
+            auto memberName = previous().text;
+            consume(TokenType::Colon, "Expect ':' after member name.");
+            consume(TokenType::Identifier, "Expect identifier after ':'.");
+            auto memberTypeName = previous().text;
+            tfm::printf("%s: %s\n", memberName, memberTypeName);
+            consumeEndStatement("Expect ';' or newline after member.");
+            Type memberType = typeByName(this, memberTypeName);
+            StructMember m = { std::string(memberName), memberType };
+            typeData.members.push_back(m);
+            continue;
+        } else {
+            break;
+        }
+    }
+    addNamedType(this, typeData.name, typeData);
+    consume(TokenType::RightBrace, "Expect '}' after member list.");
+}
+
+
 void Parser::number(ExpressionState es) {
     // https://stackoverflow.com/questions/11752705/does-stdstring-contain-null-terminator
     // Don't want to risk it - just convert to a new string instead
@@ -1211,7 +1247,7 @@ ParseRule rules[] = {
     {&Parser::string,   nullptr,           Precedence::None},       // String
     {&Parser::number,   nullptr,           Precedence::None},       // Number
     {nullptr,           &Parser::and_,     Precedence::And},        // And
-    {nullptr,           nullptr,           Precedence::None},       // Class
+    {nullptr,           nullptr,           Precedence::None},       // Struct
     {nullptr,           nullptr,           Precedence::None},       // Else
     {&Parser::literal,  nullptr,           Precedence::None},       // False
     {nullptr,           nullptr,           Precedence::None},       // For

@@ -94,14 +94,22 @@ struct FunctionTypeData {
     std::vector<TypeData*> parameterTypes;
     TypeData* returnType;
 };
+struct StructMember {
+    std::string name;
+    TypeData* type;
+};
+struct StructTypeData {
+    std::string name;
+    std::vector<StructMember> members;
+};
 
 struct TypeData {
     const size_t type_id;
-    mpark::variant<PrimitiveTypeData, FunctionTypeData> variant;
-
+    mpark::variant<PrimitiveTypeData, FunctionTypeData, StructTypeData> variant;
 
     FunctionTypeData* functionTypeData() { return &mpark::get<FunctionTypeData>(variant); }
     PrimitiveTypeData* primitiveTypeData() { return &mpark::get<PrimitiveTypeData>(variant); }
+    StructTypeData* structTypeData() { return &mpark::get<StructTypeData>(variant); }
 
 };
 using Type = TypeData*;
