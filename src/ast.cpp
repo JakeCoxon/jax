@@ -113,6 +113,205 @@ struct ExprStatement {
     Expr *expr = nullptr;
 };
 
+struct AstGen {
+    std::vector<Expr*> expressionStack;
+    std::vector<Declaration*> declarationStack;
+    std::vector<Declaration**> nextDeclarationStack;
+
+    std::vector<Type> structDeclarations;
+
+    std::vector<FunInstantiation> functionInstantiations;
+
+    Parser *parser = nullptr;
+    Declaration *initialDeclaration = nullptr;
+
+    AstGen() {
+        nextDeclarationStack.push_back(&initialDeclaration);
+    }
+
+
+    Expr *popExpression() {
+        Expr *expr = expressionStack.back();
+        expressionStack.pop_back();
+        return expr;
+    }
+
+
+    void string(Token name) {
+        auto lit = new StringLiteral;
+        lit->expr.type = parser->compiler->expressionTypeStack.back();
+        lit->expr.kind = ExprKind::String;
+        lit->name = name;
+        expressionStack.push_back(&lit->expr);
+    }
+    void number(Token name) {
+        auto lit = new NumberLiteral;
+        lit->expr.type = parser->compiler->expressionTypeStack.back();
+        lit->expr.kind = ExprKind::Number;
+        lit->name = name;
+        expressionStack.push_back(&lit->expr);
+    }
+    void variable(Token name) {
+        auto var = new VariableLiteral;
+        var->expr.type = parser->compiler->expressionTypeStack.back();
+        var->expr.kind = ExprKind::Var;
+        var->name = name;
+        expressionStack.push_back(&var->expr);
+    }
+    void booleanLiteral(bool value) {
+        auto b = new BooleanLiteral;
+        b->expr.type = parser->compiler->expressionTypeStack.back();
+        b->expr.kind = ExprKind::Boolean;
+        b->value = value;
+        expressionStack.push_back(&b->expr);
+    }
+
+    void property(Token property) {
+        auto prop = new PropertyExpr;
+        prop->expr.type = parser->compiler->expressionTypeStack.back();
+        prop->expr.kind = ExprKind::Property;
+        prop->left = popExpression();
+        prop->property = property;
+        expressionStack.push_back(&prop->expr);
+    }
+    void assignment() {
+        auto assgn = new AssignmentExpr;
+        assgn->expr.type = parser->compiler->expressionTypeStack.back();
+        assgn->expr.kind = ExprKind::Assignment;
+        assgn->value = popExpression();
+        assgn->left = popExpression();
+        expressionStack.push_back(&assgn->expr);
+    }
+
+    void infix(Token operatorToken) {
+        Expr *right = popExpression();
+        Expr *left = popExpression();
+        auto infix = new InfixExpr;
+        infix->expr.type = parser->compiler->expressionTypeStack.back();
+        infix->expr.kind = ExprKind::Infix;
+        infix->operatorToken = operatorToken;
+        infix->left = left;
+        infix->right = right;
+        expressionStack.push_back(&infix->expr);
+    }
+
+    void functionCall(FunctionInstantiation inst, int argCount) {
+        std::vector<Expr*> args;
+        for (int i = 0; i < argCount; i++) {
+            args.insert(args.begin(), 1, popExpression());
+        }
+        auto call = new FunctionCall();
+        call->expr.kind = ExprKind::FunctionCall;
+        call->expr.type = parser->compiler->expressionTypeStack.back();
+        call->argCount = argCount;
+        call->arguments = args;
+        call->functionDeclaration = inst.declaration;
+        expressionStack.push_back(&call->expr);
+    }
+
+    // Declarations
+
+    void exprStatement() {
+        auto exprStmt = new ExprStatement;
+        exprStmt->stmt.decl.kind = DeclKind::Stmt;
+        exprStmt->stmt.kind = StmtKind::Expr;
+        exprStmt->expr = popExpression();
+
+        *nextDeclarationStack.back() = &exprStmt->stmt.decl;
+        nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
+    }
+
+    void returnStatement(bool isNil) {
+        auto exprStmt = new ReturnStatement;
+        exprStmt->stmt.decl.kind = DeclKind::Stmt;
+        exprStmt->stmt.kind = StmtKind::Return;
+        exprStmt->expr = isNil ? nullptr : popExpression();
+
+        *nextDeclarationStack.back() = &exprStmt->stmt.decl;
+        nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
+    }
+
+    IfStatement *beginIfStatementBlock() {
+        auto ifStmt = new IfStatement;
+        ifStmt->stmt.decl.kind = DeclKind::Stmt;
+        ifStmt->stmt.kind = StmtKind::If;
+        ifStmt->expr = popExpression();
+
+        *nextDeclarationStack.back() = &ifStmt->stmt.decl;
+        nextDeclarationStack.back() = &ifStmt->stmt.decl.nextSibling;
+
+        nextDeclarationStack.push_back(&ifStmt->firstDeclaration);
+        return ifStmt;
+    }
+    void beginElseBlock(IfStatement *ifStmt) {
+        nextDeclarationStack.push_back(&ifStmt->firstElseDeclaration);
+    }
+
+    void beginWhileStatementBlock() {
+        auto whileStmt = new WhileStatement;
+        whileStmt->stmt.decl.kind = DeclKind::Stmt;
+        whileStmt->stmt.kind = StmtKind::While;
+        whileStmt->expr = popExpression();
+
+        *nextDeclarationStack.back() = &whileStmt->stmt.decl;
+        nextDeclarationStack.back() = &whileStmt->stmt.decl.nextSibling;
+        nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
+    }
+    
+    void varDeclaration(Token name, Type type) {
+        auto varDecl = new VarDeclaration;
+        varDecl->decl.kind = DeclKind::Var;
+        varDecl->name = name;
+        varDecl->value = popExpression();
+        varDecl->type = type;
+        declarationStack.push_back(&varDecl->decl);
+
+        *nextDeclarationStack.back() = &varDecl->decl;
+        nextDeclarationStack.back() = &varDecl->decl.nextSibling;
+    }
+
+    void print() {
+        auto print = new PrintStatement;
+        print->stmt.decl.kind = DeclKind::Stmt;
+        print->stmt.kind = StmtKind::Print;
+        print->argument = popExpression();
+        declarationStack.push_back(&print->stmt.decl);
+
+        *nextDeclarationStack.back() = &print->stmt.decl;
+        nextDeclarationStack.back() = &print->stmt.decl.nextSibling;
+    }
+
+    void beginBlock() {
+        auto block = new Block;
+        block->stmt.decl.kind = DeclKind::Stmt;
+        block->stmt.kind = StmtKind::Block;
+        declarationStack.push_back(&block->stmt.decl);
+        *nextDeclarationStack.back() = &block->stmt.decl;
+        nextDeclarationStack.back() = &block->stmt.decl.nextSibling;
+        nextDeclarationStack.push_back(&block->firstDeclaration);
+    }
+    void endBlock() {
+        nextDeclarationStack.pop_back();
+    }
+
+    void beginFunctionDeclaration(FunctionInstantiation inst) {
+        auto func = new FunDeclaration;
+        functionInstantiations.push_back({func, inst});
+        func->decl.kind = DeclKind::Fun;
+        declarationStack.push_back(&func->decl);
+        *nextDeclarationStack.back() = &func->decl;
+        nextDeclarationStack.back() = &func->decl.nextSibling;
+        nextDeclarationStack.push_back(&func->firstDeclaration);
+    }
+    void endFunctionDeclaration() {
+        nextDeclarationStack.pop_back();
+    }
+
+    void structDeclaration(Type type) {
+        structDeclarations.push_back(type);
+    }
+};
+
 
 const char *tabs[] = {
     "", "  ", "    ", "      ", "        ", "          "
@@ -367,205 +566,6 @@ struct CodeGen {
         indent --;
         ss << "  return 0;" << endl;
         ss << "}";
-    }
-};
-
-struct AstGen {
-    std::vector<Expr*> expressionStack;
-    std::vector<Declaration*> declarationStack;
-    std::vector<Declaration**> nextDeclarationStack;
-
-    std::vector<Type> structDeclarations;
-
-    std::vector<FunInstantiation> functionInstantiations;
-
-    Parser *parser = nullptr;
-    Declaration *initialDeclaration = nullptr;
-
-    AstGen() {
-        nextDeclarationStack.push_back(&initialDeclaration);
-    }
-
-
-    Expr *popExpression() {
-        Expr *expr = expressionStack.back();
-        expressionStack.pop_back();
-        return expr;
-    }
-
-
-    void string(Token name) {
-        auto lit = new StringLiteral;
-        lit->expr.type = parser->compiler->expressionTypeStack.back();
-        lit->expr.kind = ExprKind::String;
-        lit->name = name;
-        expressionStack.push_back(&lit->expr);
-    }
-    void number(Token name) {
-        auto lit = new NumberLiteral;
-        lit->expr.type = parser->compiler->expressionTypeStack.back();
-        lit->expr.kind = ExprKind::Number;
-        lit->name = name;
-        expressionStack.push_back(&lit->expr);
-    }
-    void variable(Token name) {
-        auto var = new VariableLiteral;
-        var->expr.type = parser->compiler->expressionTypeStack.back();
-        var->expr.kind = ExprKind::Var;
-        var->name = name;
-        expressionStack.push_back(&var->expr);
-    }
-    void booleanLiteral(bool value) {
-        auto b = new BooleanLiteral;
-        b->expr.type = parser->compiler->expressionTypeStack.back();
-        b->expr.kind = ExprKind::Boolean;
-        b->value = value;
-        expressionStack.push_back(&b->expr);
-    }
-
-    void property(Token property) {
-        auto prop = new PropertyExpr;
-        prop->expr.type = parser->compiler->expressionTypeStack.back();
-        prop->expr.kind = ExprKind::Property;
-        prop->left = popExpression();
-        prop->property = property;
-        expressionStack.push_back(&prop->expr);
-    }
-    void assignment() {
-        auto assgn = new AssignmentExpr;
-        assgn->expr.type = parser->compiler->expressionTypeStack.back();
-        assgn->expr.kind = ExprKind::Assignment;
-        assgn->value = popExpression();
-        assgn->left = popExpression();
-        expressionStack.push_back(&assgn->expr);
-    }
-
-    void infix(Token operatorToken) {
-        Expr *right = popExpression();
-        Expr *left = popExpression();
-        auto infix = new InfixExpr;
-        infix->expr.type = parser->compiler->expressionTypeStack.back();
-        infix->expr.kind = ExprKind::Infix;
-        infix->operatorToken = operatorToken;
-        infix->left = left;
-        infix->right = right;
-        expressionStack.push_back(&infix->expr);
-    }
-
-    void functionCall(FunctionInstantiation inst, int argCount) {
-        std::vector<Expr*> args;
-        for (int i = 0; i < argCount; i++) {
-            args.insert(args.begin(), 1, popExpression());
-        }
-        auto call = new FunctionCall();
-        call->expr.kind = ExprKind::FunctionCall;
-        call->expr.type = parser->compiler->expressionTypeStack.back();
-        call->argCount = argCount;
-        call->arguments = args;
-        call->functionDeclaration = inst.declaration;
-        expressionStack.push_back(&call->expr);
-    }
-
-    // Declarations
-
-    void exprStatement() {
-        auto exprStmt = new ExprStatement;
-        exprStmt->stmt.decl.kind = DeclKind::Stmt;
-        exprStmt->stmt.kind = StmtKind::Expr;
-        exprStmt->expr = popExpression();
-
-        *nextDeclarationStack.back() = &exprStmt->stmt.decl;
-        nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
-    }
-
-    void returnStatement(bool isNil) {
-        auto exprStmt = new ReturnStatement;
-        exprStmt->stmt.decl.kind = DeclKind::Stmt;
-        exprStmt->stmt.kind = StmtKind::Return;
-        exprStmt->expr = isNil ? nullptr : popExpression();
-
-        *nextDeclarationStack.back() = &exprStmt->stmt.decl;
-        nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
-    }
-
-    IfStatement *beginIfStatementBlock() {
-        auto ifStmt = new IfStatement;
-        ifStmt->stmt.decl.kind = DeclKind::Stmt;
-        ifStmt->stmt.kind = StmtKind::If;
-        ifStmt->expr = popExpression();
-
-        *nextDeclarationStack.back() = &ifStmt->stmt.decl;
-        nextDeclarationStack.back() = &ifStmt->stmt.decl.nextSibling;
-
-        nextDeclarationStack.push_back(&ifStmt->firstDeclaration);
-        return ifStmt;
-    }
-    void beginElseBlock(IfStatement *ifStmt) {
-        nextDeclarationStack.push_back(&ifStmt->firstElseDeclaration);
-    }
-
-    void beginWhileStatementBlock() {
-        auto whileStmt = new WhileStatement;
-        whileStmt->stmt.decl.kind = DeclKind::Stmt;
-        whileStmt->stmt.kind = StmtKind::While;
-        whileStmt->expr = popExpression();
-
-        *nextDeclarationStack.back() = &whileStmt->stmt.decl;
-        nextDeclarationStack.back() = &whileStmt->stmt.decl.nextSibling;
-        nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
-    }
-    
-    void varDeclaration(Token name, Type type) {
-        auto varDecl = new VarDeclaration;
-        varDecl->decl.kind = DeclKind::Var;
-        varDecl->name = name;
-        varDecl->value = popExpression();
-        varDecl->type = type;
-        declarationStack.push_back(&varDecl->decl);
-
-        *nextDeclarationStack.back() = &varDecl->decl;
-        nextDeclarationStack.back() = &varDecl->decl.nextSibling;
-    }
-
-    void print() {
-        auto print = new PrintStatement;
-        print->stmt.decl.kind = DeclKind::Stmt;
-        print->stmt.kind = StmtKind::Print;
-        print->argument = popExpression();
-        declarationStack.push_back(&print->stmt.decl);
-
-        *nextDeclarationStack.back() = &print->stmt.decl;
-        nextDeclarationStack.back() = &print->stmt.decl.nextSibling;
-    }
-
-    void beginBlock() {
-        auto block = new Block;
-        block->stmt.decl.kind = DeclKind::Stmt;
-        block->stmt.kind = StmtKind::Block;
-        declarationStack.push_back(&block->stmt.decl);
-        *nextDeclarationStack.back() = &block->stmt.decl;
-        nextDeclarationStack.back() = &block->stmt.decl.nextSibling;
-        nextDeclarationStack.push_back(&block->firstDeclaration);
-    }
-    void endBlock() {
-        nextDeclarationStack.pop_back();
-    }
-
-    void beginFunctionDeclaration(FunctionInstantiation inst) {
-        auto func = new FunDeclaration;
-        functionInstantiations.push_back({func, inst});
-        func->decl.kind = DeclKind::Fun;
-        declarationStack.push_back(&func->decl);
-        *nextDeclarationStack.back() = &func->decl;
-        nextDeclarationStack.back() = &func->decl.nextSibling;
-        nextDeclarationStack.push_back(&func->firstDeclaration);
-    }
-    void endFunctionDeclaration() {
-        nextDeclarationStack.pop_back();
-    }
-
-    void structDeclaration(Type type) {
-        structDeclarations.push_back(type);
     }
 };
 
