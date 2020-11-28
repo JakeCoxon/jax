@@ -77,14 +77,16 @@ void typecheckIfCondition(Parser *parser) {
     typecheckPop(parser);
 }
 
-Type typecheckVarDeclaration(Parser *parser, Type type) {
-    Type backType = parser->compiler->expressionTypeStack.back();
-    parser->compiler->expressionTypeStack.pop_back();
-    if (type == types::Void) {
-        type = backType;
-    }
-    if (!typecheckIsAssignable(parser, type, backType)) {
-        parser->error("Cannot declare a variable with a different type.");
+Type typecheckVarDeclaration(Parser *parser, Type type, bool initialize) {
+    if (initialize) {
+        Type initializeType = parser->compiler->expressionTypeStack.back();
+        parser->compiler->expressionTypeStack.pop_back();
+        if (type == types::Void) {
+            type = initializeType;
+        }
+        if (!typecheckIsAssignable(parser, type, initializeType)) {
+            parser->error("Cannot declare a variable with a different type.");
+        }
     }
     Local &local = parser->compiler->locals.back();
     local.type = type;
@@ -100,6 +102,40 @@ void typecheckNil(Parser *parser, Type type) {
     if (typecheckIsAssignable(parser, type, types::Void)) {
         parser->error("Cannot assign nil to this type.");
     }
+}
+
+void typecheckPropertyAccess(Parser *parser, const std::string_view& propertyName) {
+    Type mainType = parser->compiler->expressionTypeStack.back();
+    parser->compiler->expressionTypeStack.pop_back();
+
+    if (!mainType->isStruct()) {
+        parser->error("Cannot access a non-struct object.");
+        return;
+    }
+
+    StructMember *foundMember = nullptr;
+    for (auto &member : mainType->structTypeData()->members) {
+        if (member.name == propertyName) {
+            foundMember = &member;
+            break;
+        }
+    }
+
+    if (!foundMember) {
+        parser->error("Property does not exist on type.");
+        return;
+    }
+
+    parser->compiler->expressionTypeStack.push_back(foundMember->type);
+}
+void typecheckAssignExpression(Parser *parser) {
+    Type b = parser->compiler->expressionTypeStack.back();
+    parser->compiler->expressionTypeStack.pop_back();
+    Type a = parser->compiler->expressionTypeStack.back();
+    if (!typecheckIsAssignable(parser, a, b)) {
+        parser->error("Cannot assign a different type.");
+    }
+    // Leaves a on the stack
 }
 
 void typecheckNumber(Parser *parser) {

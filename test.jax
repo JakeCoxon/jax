@@ -45,10 +45,16 @@ while banana > 0 {
 struct person {
   firstname: string
   lastname: string
+  age: number
 }
 
 var me: person
+me.firstname = "Jake"
+me.lastname = "Someone"
+me.age = 200
 
+print(me.firstname)
+print(me.age)
 // print(things(5, 6))
 // things("asd", "asd")
 // print(200 + things(true, 6))

@@ -3,7 +3,7 @@
 using std::endl;
 
 enum class ExprKind {
-    FunctionCall, Infix, String, Number, Boolean, Assignment, Var
+    FunctionCall, Infix, String, Number, Boolean, Assignment, Var, Property
 };
 enum class DeclKind {
     Fun, Var, Stmt
@@ -30,6 +30,11 @@ struct InfixExpr {
     Expr *left = nullptr;
     Expr *right = nullptr;
 };
+struct PropertyExpr {
+    Expr expr;
+    Expr *left = nullptr;
+    Token property;
+};
 
 struct StringLiteral {
     Expr expr;
@@ -46,7 +51,7 @@ struct BooleanLiteral {
 
 struct AssignmentExpr {
     Expr expr;
-    Token name;
+    Expr *left;
     Expr *value = nullptr;
 };
 struct VariableLiteral {
@@ -197,9 +202,16 @@ struct CodeGen {
             }
             
             case ExprKind::Assignment: {
-                ss << ((AssignmentExpr*)expr)->name.text;
+                addExpr(((AssignmentExpr*)expr)->left);
                 ss << " = ";
                 addExpr(((AssignmentExpr*)expr)->value, false);
+                break;
+            }
+            
+            case ExprKind::Property: {
+                addExpr(((PropertyExpr*)expr)->left);
+                ss << ".";
+                ss << ((PropertyExpr*)expr)->property.text;
                 break;
             }
             
@@ -242,6 +254,9 @@ struct CodeGen {
                 if (type == types::Number) ss << "%f";
                 else if (type == types::String) ss << "%s";
                 else if (type == types::Bool) ss << "%s";
+                else {
+                    assert(false); // Not implemented
+                }
                 ss << "\\n\", ";
                 if (type == types::Bool) { 
                     ss << "("; addExpr(print->argument, false); ss << " ? \"true\" : \"false\")";
@@ -408,12 +423,20 @@ struct AstGen {
         expressionStack.push_back(&b->expr);
     }
 
-    void assignment(Token name) {
+    void property(Token property) {
+        auto prop = new PropertyExpr;
+        prop->expr.type = parser->compiler->expressionTypeStack.back();
+        prop->expr.kind = ExprKind::Property;
+        prop->left = popExpression();
+        prop->property = property;
+        expressionStack.push_back(&prop->expr);
+    }
+    void assignment() {
         auto assgn = new AssignmentExpr;
         assgn->expr.type = parser->compiler->expressionTypeStack.back();
         assgn->expr.kind = ExprKind::Assignment;
-        assgn->name = name;
         assgn->value = popExpression();
+        assgn->left = popExpression();
         expressionStack.push_back(&assgn->expr);
     }
 

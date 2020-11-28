@@ -161,6 +161,7 @@ struct Parser {
     void variable(ExpressionState es);
     void and_(ExpressionState es);
     void or_(ExpressionState es);
+    void dot(ExpressionState es);
     uint8_t argumentList(FunctionDeclaration *functionDeclaration);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
@@ -838,11 +839,12 @@ void Parser::varDeclaration() {
 
     if (match(TokenType::Equal)) {
         expression();
-        Type valueType = typecheckVarDeclaration(this, type);
+        Type valueType = typecheckVarDeclaration(this, type, true);
         if (type == types::Void) {
             type = valueType;
         }
     } else {
+        Type valueType = typecheckVarDeclaration(this, type, false);
         emitByte(OpCode::Nil);
         // typecheckNil(this, type);
     }
@@ -1128,6 +1130,24 @@ void Parser::or_(ExpressionState es) {
     ast->infix(orToken);
 }
 
+void Parser::dot(ExpressionState es) {
+    consume(TokenType::Identifier, "Expect property name after '.'.");
+    Token property = previous();
+    // uint8_t name = identifierConstant(previous().text);
+
+    typecheckPropertyAccess(this, property.text);
+    ast->property(property);
+  
+    if (es.canAssign && match(TokenType::Equal)) {
+        expression();
+        typecheckAssignExpression(this);
+        ast->assignment();
+        // emitBytes(OP_SET_PROPERTY, name); // TODO:
+    } else {
+        // emitBytes(OP_GET_PROPERTY, name);
+    }
+}
+
 uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
     uint8_t argCount = 0;
     if (!check(TokenType::RightParen)) {
@@ -1208,11 +1228,12 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
             assert(stackOffset < 256);
 
             if (es.canAssign && match(TokenType::Equal)) {
+                ast->variable(nameToken);
                 expression();
                 emitByte(setOp); emitByte((uint8_t)stackOffset);
                 typecheckAssign(this, arg);
-
-                ast->assignment(nameToken);
+                
+                ast->assignment();
             } else {
                 emitByte(getOp); emitByte((uint8_t)stackOffset);
                 typecheckVariable(this, arg);
@@ -1231,7 +1252,7 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // LeftBrace
     {nullptr,           nullptr,           Precedence::None},       // RightBrace
     {nullptr,           nullptr,           Precedence::None},       // Comma
-    {nullptr,           nullptr,           Precedence::None},       // Dot
+    {nullptr,           &Parser::dot,      Precedence::Call},       // Dot
     {&Parser::unary,    &Parser::binary,   Precedence::Term},       // Minus
     {nullptr,           &Parser::binary,   Precedence::Term},       // Plus
     {nullptr,           nullptr,           Precedence::None},       // Semicolon
