@@ -838,15 +838,18 @@ void Parser::varDeclaration() {
 
     if (match(TokenType::Equal)) {
         expression();
-        typecheckVarDeclaration(this, type);
+        Type valueType = typecheckVarDeclaration(this, type);
+        if (type == types::Void) {
+            type = valueType;
+        }
     } else {
         emitByte(OpCode::Nil);
-        typecheckNil(this, type);
+        // typecheckNil(this, type);
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     compiler->markInitialized();
 
-    ast->varDeclaration(nameToken);
+    ast->varDeclaration(nameToken, type);
 }
 
 void Parser::expression() {
@@ -977,7 +980,8 @@ void Parser::structDeclaration() {
             break;
         }
     }
-    addNamedType(this, typeData.name, typeData);
+    Type type = addNamedType(this, typeData.name, typeData);
+    ast->structDeclaration(type);
     consume(TokenType::RightBrace, "Expect '}' after member list.");
 }
 

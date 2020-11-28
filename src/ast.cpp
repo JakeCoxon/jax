@@ -71,6 +71,7 @@ struct FunInstantiation {
 struct VarDeclaration {
     Declaration decl;
     Token name;
+    Type type;
     Expr *value = nullptr;
 };
 struct Statement {
@@ -129,6 +130,11 @@ struct CodeGen {
         else if (type == types::Dynamic)  { ss << "dynamic"; }
         else if (type == types::Unknown)  { ss << "UNKNOWN"; }
         else if (type == types::Function) { ss << "FUNCTION"; }
+        else {
+            if (type->isStruct()) {
+                ss << type->structTypeData()->name;
+            }
+        }
     }
 
     void addFunctions(std::vector<FunInstantiation> &insts) {
@@ -154,6 +160,22 @@ struct CodeGen {
             ss << "}";
             ss << endl << endl;
             
+        }
+    }
+
+    void addStructDeclarations(std::vector<Type> & structs) {
+        for (auto stru : structs) {
+            auto structData = stru->structTypeData();
+            ss << "typedef struct " << structData->name << " {" << endl;
+            indent ++;
+            for (auto &member: structData->members) {
+                addIndent();
+                addTypeName(member.type);
+                ss << " " << member.name << ";" << endl;
+
+            }
+            indent --;
+            ss << "} " << structData->name << ";" << endl << endl;
         }
     }
 
@@ -286,10 +308,13 @@ struct CodeGen {
             case DeclKind::Var: {
                 addIndent();
                 auto var = (VarDeclaration*)decl;
-                addTypeName(var->value->type);
+                addTypeName(var->type);
                 ss << " ";
-                ss << var->name.text << " = ";
-                addExpr(var->value, false);
+                ss << var->name.text;
+                if (var->value) {
+                    ss << " = ";
+                    addExpr(var->value, false);
+                }
                 ss << ";" << endl;
                 break;
             }
@@ -334,6 +359,8 @@ struct AstGen {
     std::vector<Expr*> expressionStack;
     std::vector<Declaration*> declarationStack;
     std::vector<Declaration**> nextDeclarationStack;
+
+    std::vector<Type> structDeclarations;
 
     std::vector<FunInstantiation> functionInstantiations;
 
@@ -465,11 +492,12 @@ struct AstGen {
         nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
     }
     
-    void varDeclaration(Token name) {
+    void varDeclaration(Token name, Type type) {
         auto varDecl = new VarDeclaration;
         varDecl->decl.kind = DeclKind::Var;
         varDecl->name = name;
         varDecl->value = popExpression();
+        varDecl->type = type;
         declarationStack.push_back(&varDecl->decl);
 
         *nextDeclarationStack.back() = &varDecl->decl;
@@ -512,6 +540,10 @@ struct AstGen {
     void endFunctionDeclaration() {
         nextDeclarationStack.pop_back();
     }
+
+    void structDeclaration(Type type) {
+        structDeclarations.push_back(type);
+    }
 };
 
 std::string generateCodeC(AstGen *astGen) {
@@ -519,6 +551,7 @@ std::string generateCodeC(AstGen *astGen) {
     codeGen.parser = astGen->parser;
     
     codeGen.addTypedefs();
+    codeGen.addStructDeclarations(astGen->structDeclarations);
     codeGen.addFunctions(astGen->functionInstantiations);
     codeGen.addMain(astGen->initialDeclaration);
 

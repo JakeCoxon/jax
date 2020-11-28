@@ -18,13 +18,15 @@ Type typeByName(Parser *parser, const std::string_view &name) {
 }
 
 template<typename T>
-void addNewType(Parser *parser, T typeData) {
+Type addNewType(Parser *parser, T typeData) {
     parser->types.push_back(new TypeData{ parser->types.size(), T(typeData)});
+    return parser->types.back();
 }
 template<typename T>
-void addNamedType(Parser *parser, const std::string &name, T typeData) {
+Type addNamedType(Parser *parser, const std::string &name, T typeData) {
     addNewType(parser, typeData);
     parser->typesByName[name] = parser->types.back();
+    return parser->types.back();
 }
 
 void typecheckInit(Parser *parser) {
@@ -75,7 +77,7 @@ void typecheckIfCondition(Parser *parser) {
     typecheckPop(parser);
 }
 
-void typecheckVarDeclaration(Parser *parser, Type type) {
+Type typecheckVarDeclaration(Parser *parser, Type type) {
     Type backType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
     if (type == types::Void) {
@@ -88,6 +90,7 @@ void typecheckVarDeclaration(Parser *parser, Type type) {
     local.type = type;
     local.stackOffset = parser->compiler->nextStackSlot;
     parser->compiler->nextStackSlot += slotSizeOfType(type);
+    return type;
 }
 
 void typecheckNil(Parser *parser, Type type) {

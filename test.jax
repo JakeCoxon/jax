@@ -43,10 +43,11 @@ while banana > 0 {
 }
 
 struct person {
-  cool: thing
   firstname: string
   lastname: string
 }
+
+var me: person
 
 // print(things(5, 6))
 // things("asd", "asd")

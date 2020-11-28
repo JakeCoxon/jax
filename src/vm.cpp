@@ -107,9 +107,13 @@ struct TypeData {
     const size_t type_id;
     mpark::variant<PrimitiveTypeData, FunctionTypeData, StructTypeData> variant;
 
-    FunctionTypeData* functionTypeData() { return &mpark::get<FunctionTypeData>(variant); }
     PrimitiveTypeData* primitiveTypeData() { return &mpark::get<PrimitiveTypeData>(variant); }
+    FunctionTypeData* functionTypeData() { return &mpark::get<FunctionTypeData>(variant); }
     StructTypeData* structTypeData() { return &mpark::get<StructTypeData>(variant); }
+
+    bool isPrimitive() { return mpark::holds_alternative<PrimitiveTypeData>(variant); }
+    bool isFunction() { return mpark::holds_alternative<FunctionTypeData>(variant); }
+    bool isStruct() { return mpark::holds_alternative<StructTypeData>(variant); }
 
 };
 using Type = TypeData*;
