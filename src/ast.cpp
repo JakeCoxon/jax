@@ -13,6 +13,7 @@ enum class StmtKind {
 };
 
 struct Expr;
+struct Declaration;
 
 struct FunctionCall {
     // Expr expr;
@@ -70,12 +71,7 @@ struct Expr {
         BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral> variant;
 };
 
-struct Declaration {
-    DeclKind kind;
-    Declaration *nextSibling = nullptr;
-};
 struct FunDeclaration {
-    Declaration decl;
     // FunctionDeclaration *functionDeclaration = nullptr;
     Declaration *firstDeclaration = nullptr;
 };
@@ -84,44 +80,58 @@ struct FunInstantiation {
     FunctionInstantiation inst;
 };
 struct VarDeclaration {
-    Declaration decl;
     Token name;
     Type type;
     Expr *value = nullptr;
 };
-struct Statement {
-    Declaration decl;
-    StmtKind kind;
-};
+
+
 
 
 struct PrintStatement {
-    Statement stmt;
+    // Statement stmt;
     Expr *argument = nullptr;
 };
 struct IfStatement {
-    Statement stmt;
+    // Statement stmt;
     Expr *expr = nullptr;
     Declaration *firstDeclaration = nullptr;
     Declaration *firstElseDeclaration = nullptr;
 };
 struct ReturnStatement {
-    Statement stmt;
+    // Statement stmt;
     Expr *expr = nullptr;
 };
 struct WhileStatement {
-    Statement stmt;
+    // Statement stmt;
     Expr *expr = nullptr;
     Declaration *firstDeclaration = nullptr;
 };
 struct Block {
-    Statement stmt;
+    // Statement stmt;
     Declaration *firstDeclaration = nullptr;
 };
 struct ExprStatement {
-    Statement stmt;
+    // Statement stmt;
     Expr *expr = nullptr;
 };
+
+struct Statement {
+    mpark::variant<PrintStatement, IfStatement, ReturnStatement, WhileStatement, Block, ExprStatement> variant;
+    // StmtKind kind;
+};
+
+struct Declaration {
+    Declaration *nextSibling = nullptr;
+
+    mpark::variant<FunDeclaration, VarDeclaration, Statement> variant;
+};
+
+template <class T, class U>
+T *makeVariant(U *decl) {
+    decl->variant = T {};
+    return &mpark::get<T>(decl->variant);
+}
 
 struct AstGen {
     std::vector<Expr*> expressionStack;
@@ -141,7 +151,7 @@ struct AstGen {
 
 
     Expr *popExpression() {
-        if (expressionStack.size() == 0) throw "Stack empty";
+        assert(expressionStack.size() > 0);
         Expr *expr = expressionStack.back();
         expressionStack.pop_back();
         return expr;
@@ -150,53 +160,47 @@ struct AstGen {
 
     void string(Token name) {
         auto expr = new Expr;
-        auto lit = StringLiteral {};
+        auto lit = makeVariant<StringLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        lit.name = name;
-        expr->variant = lit;
+        lit->name = name;
         expressionStack.push_back(expr);
     }
     void number(Token name) {
         auto expr = new Expr;
-        auto lit = NumberLiteral {};
+        auto lit = makeVariant<NumberLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        lit.name = name;
-        expr->variant = lit;
+        lit->name = name;
         expressionStack.push_back(expr);
     }
     void variable(Token name) {
         auto expr = new Expr;
-        auto var = VariableLiteral {};
+        auto var = makeVariant<VariableLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        var.name = name;
-        expr->variant = var;
+        var->name = name;
         expressionStack.push_back(expr);
     }
     void booleanLiteral(bool value) {
         auto expr = new Expr;
-        auto b = BooleanLiteral {};
+        auto b = makeVariant<BooleanLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        b.value = value;
-        expr->variant = b;
+        b->value = value;
         expressionStack.push_back(expr);
     }
 
     void property(Token property) {
         auto expr = new Expr;
-        auto prop = PropertyExpr {};
-        prop.left = popExpression();
-        prop.property = property;
+        auto prop = makeVariant<PropertyExpr>(expr);
+        prop->left = popExpression();
+        prop->property = property;
         expr->type = parser->compiler->expressionTypeStack.back();
-        expr->variant = prop;
         expressionStack.push_back(expr);
     }
     void assignment() {
         auto expr = new Expr;
-        auto assgn = AssignmentExpr {};
-        assgn.value = popExpression();
-        assgn.left = popExpression();
+        auto assgn = makeVariant<AssignmentExpr>(expr);
+        assgn->value = popExpression();
+        assgn->left = popExpression();
         expr->type = parser->compiler->expressionTypeStack.back();
-        expr->variant = assgn;
         expressionStack.push_back(expr);
     }
 
@@ -204,12 +208,11 @@ struct AstGen {
         auto expr = new Expr;
         Expr *right = popExpression();
         Expr *left = popExpression();
-        auto infix = InfixExpr {};
+        auto infix = makeVariant<InfixExpr>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        infix.operatorToken = operatorToken;
-        infix.left = left;
-        infix.right = right;
-        expr->variant = infix;
+        infix->operatorToken = operatorToken;
+        infix->left = left;
+        infix->right = right;
         expressionStack.push_back(expr);
     }
 
@@ -220,62 +223,60 @@ struct AstGen {
         }
         auto expr = new Expr();
         expr->type = parser->compiler->expressionTypeStack.back();
-        auto call = FunctionCall {};
-        call.argCount = argCount;
-        call.arguments = args;
-        call.functionDeclaration = inst.declaration;
-        expr->variant = call;
+        auto call = makeVariant<FunctionCall>(expr);
+        call->argCount = argCount;
+        call->arguments = args;
+        call->functionDeclaration = inst.declaration;
         expressionStack.push_back(expr);
     }
 
     void arrayLiteral(int numElements, Type elementType) {
         auto expr = new Expr();
         expr->type = parser->compiler->expressionTypeStack.back();
-        auto array = ArrayLiteral {};
-        array.elementType = elementType;
-        array.numElements = numElements;
-        array.elements = new Expr*[numElements];
+        auto array = makeVariant<ArrayLiteral>(expr);
+        array->elementType = elementType;
+        array->numElements = numElements;
+        array->elements = new Expr*[numElements];
         assert(expressionStack.size() >= (size_t)numElements);
         for (int i = 0; i < numElements; i++) {
-            array.elements[i] = expressionStack[expressionStack.size() - numElements + i];
+            array->elements[i] = expressionStack[expressionStack.size() - numElements + i];
         }
         for (int i = 0; i < numElements; i++) {
             popExpression();
         }
-        expr->variant = array;
         expressionStack.push_back(expr);
     }
 
     // Declarations
 
     void exprStatement() {
-        auto exprStmt = new ExprStatement;
-        exprStmt->stmt.decl.kind = DeclKind::Stmt;
-        exprStmt->stmt.kind = StmtKind::Expr;
+        auto decl = new Declaration;
+        auto stmt = makeVariant<Statement>(decl);
+        auto exprStmt = makeVariant<ExprStatement>(stmt);
         exprStmt->expr = popExpression();
 
-        *nextDeclarationStack.back() = &exprStmt->stmt.decl;
-        nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
     }
 
     void returnStatement(bool isNil) {
-        auto exprStmt = new ReturnStatement;
-        exprStmt->stmt.decl.kind = DeclKind::Stmt;
-        exprStmt->stmt.kind = StmtKind::Return;
-        exprStmt->expr = isNil ? nullptr : popExpression();
+        auto decl = new Declaration;
+        auto stmt = makeVariant<Statement>(decl);
+        auto retStmt = makeVariant<ReturnStatement>(stmt);
+        retStmt->expr = isNil ? nullptr : popExpression();
 
-        *nextDeclarationStack.back() = &exprStmt->stmt.decl;
-        nextDeclarationStack.back() = &exprStmt->stmt.decl.nextSibling;
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
     }
 
     IfStatement *beginIfStatementBlock() {
-        auto ifStmt = new IfStatement;
-        ifStmt->stmt.decl.kind = DeclKind::Stmt;
-        ifStmt->stmt.kind = StmtKind::If;
+        auto decl = new Declaration;
+        auto stmt = makeVariant<Statement>(decl);
+        auto ifStmt = makeVariant<IfStatement>(stmt);
         ifStmt->expr = popExpression();
 
-        *nextDeclarationStack.back() = &ifStmt->stmt.decl;
-        nextDeclarationStack.back() = &ifStmt->stmt.decl.nextSibling;
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
 
         nextDeclarationStack.push_back(&ifStmt->firstDeclaration);
         return ifStmt;
@@ -285,46 +286,46 @@ struct AstGen {
     }
 
     void beginWhileStatementBlock() {
-        auto whileStmt = new WhileStatement;
-        whileStmt->stmt.decl.kind = DeclKind::Stmt;
-        whileStmt->stmt.kind = StmtKind::While;
+        auto decl = new Declaration;
+        auto stmt = makeVariant<Statement>(decl);
+        auto whileStmt = makeVariant<WhileStatement>(stmt);
         whileStmt->expr = popExpression();
 
-        *nextDeclarationStack.back() = &whileStmt->stmt.decl;
-        nextDeclarationStack.back() = &whileStmt->stmt.decl.nextSibling;
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
         nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
     }
     
     void varDeclaration(Token name, Type type, bool initializer) {
-        auto varDecl = new VarDeclaration;
-        varDecl->decl.kind = DeclKind::Var;
+        auto decl = new Declaration;
+        auto varDecl = makeVariant<VarDeclaration>(decl);
         varDecl->name = name;
-        varDecl->value = initializer > 0 ? popExpression() : nullptr;
+        varDecl->value = initializer ? popExpression() : nullptr;
         varDecl->type = type;
-        declarationStack.push_back(&varDecl->decl);
+        declarationStack.push_back(decl);
 
-        *nextDeclarationStack.back() = &varDecl->decl;
-        nextDeclarationStack.back() = &varDecl->decl.nextSibling;
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
     }
 
     void print() {
-        auto print = new PrintStatement;
-        print->stmt.decl.kind = DeclKind::Stmt;
-        print->stmt.kind = StmtKind::Print;
+        auto decl = new Declaration;
+        auto stmt = makeVariant<Statement>(decl);
+        auto print = makeVariant<PrintStatement>(stmt);
         print->argument = popExpression();
-        declarationStack.push_back(&print->stmt.decl);
+        declarationStack.push_back(decl);
 
-        *nextDeclarationStack.back() = &print->stmt.decl;
-        nextDeclarationStack.back() = &print->stmt.decl.nextSibling;
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
     }
 
     void beginBlock() {
-        auto block = new Block;
-        block->stmt.decl.kind = DeclKind::Stmt;
-        block->stmt.kind = StmtKind::Block;
-        declarationStack.push_back(&block->stmt.decl);
-        *nextDeclarationStack.back() = &block->stmt.decl;
-        nextDeclarationStack.back() = &block->stmt.decl.nextSibling;
+        auto decl = new Declaration;
+        auto stmt = makeVariant<Statement>(decl);
+        auto block = makeVariant<Block>(stmt);
+        declarationStack.push_back(decl);
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
         nextDeclarationStack.push_back(&block->firstDeclaration);
     }
     void endBlock() {
@@ -332,12 +333,13 @@ struct AstGen {
     }
 
     void beginFunctionDeclaration(FunctionInstantiation inst) {
-        auto func = new FunDeclaration;
+        auto decl = new Declaration;
+        auto func = makeVariant<FunDeclaration>(decl);
         functionInstantiations.push_back({func, inst});
-        func->decl.kind = DeclKind::Fun;
-        declarationStack.push_back(&func->decl);
-        *nextDeclarationStack.back() = &func->decl;
-        nextDeclarationStack.back() = &func->decl.nextSibling;
+
+        declarationStack.push_back(decl);
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
         nextDeclarationStack.push_back(&func->firstDeclaration);
     }
     void endFunctionDeclaration() {
@@ -345,6 +347,7 @@ struct AstGen {
     }
 
     void structDeclaration(Type type) {
+        assert(type->isStruct());
         structDeclarations.push_back(type);
     }
 };
@@ -488,11 +491,10 @@ struct CodeGen {
     }
 
     void addStmt(Statement *stmt) {
-        switch (stmt->kind) {
-            case StmtKind::Print: {
+        rollbear::visit(overloaded {
+            [&](PrintStatement &print) {
                 ss << "printf(\"";
-                auto print = (PrintStatement*)stmt;
-                Type type = print->argument->type;
+                Type type = print.argument->type;
                 if (type == types::Number) ss << "%f";
                 else if (type == types::String) ss << "%s";
                 else if (type == types::Bool) ss << "%s";
@@ -502,86 +504,75 @@ struct CodeGen {
                 }
                 ss << "\\n\", ";
                 if (type == types::Bool) { 
-                    ss << "("; addExpr(print->argument, false); ss << " ? \"true\" : \"false\")";
-                } else { addExpr(print->argument, false); }
+                    ss << "("; addExpr(print.argument, false); ss << " ? \"true\" : \"false\")";
+                } else { addExpr(print.argument, false); }
                 ss << ")";
                 ss << ";" << endl;
-                break;
-            }
-            case StmtKind::If: {
-                auto ifStmt = (IfStatement*)stmt;
+            },
+            [&](IfStatement &ifStmt) {
                 ss << "if (";
-                addExpr(ifStmt->expr, false);
+                addExpr(ifStmt.expr, false);
                 ss << ") {" << endl;
-                indent ++; addDecls(ifStmt->firstDeclaration); indent --;
-                if (ifStmt->firstElseDeclaration) {
+                indent ++; addDecls(ifStmt.firstDeclaration); indent --;
+                if (ifStmt.firstElseDeclaration) {
                     addIndent();
                     ss << "} else {" << endl;
-                    indent ++; addDecls(ifStmt->firstElseDeclaration); indent --;
+                    indent ++; addDecls(ifStmt.firstElseDeclaration); indent --;
                 }
                 addIndent();
                 ss << "}" << endl;
 
-                break;
-            }
-            case StmtKind::Return: {
-                auto ret = (ReturnStatement*)stmt;
+            },
+            [&](ReturnStatement &ret) {
                 ss << "return ";
-                if (ret->expr) addExpr(ret->expr, false);
+                if (ret.expr) addExpr(ret.expr, false);
                 ss << ";" << endl;
-                break;
-            }
-            case StmtKind::While: {
-                auto whileStmt = (WhileStatement*)stmt;
+            },
+            [&](WhileStatement &whileStmt) {
                 ss << "while (";
-                addExpr(whileStmt->expr, false);
+                addExpr(whileStmt.expr, false);
                 ss << ") {" << endl;
-                indent ++; addDecls(whileStmt->firstDeclaration); indent --;
+                indent ++; addDecls(whileStmt.firstDeclaration); indent --;
                 addIndent();
                 ss << "}" << endl;
-                break;
-            }
-            case StmtKind::Block: {
+            },
+            [&](Block &block) {
                 ss << "{" << endl;
                 indent ++;
-                addDecls(((Block*)stmt)->firstDeclaration);
+                addDecls(block.firstDeclaration);
                 indent --;
                 addIndent();
                 ss << "}" << endl;
-                break;
-            }
-            case StmtKind::Expr: {
-                addExpr(((ExprStatement*)stmt)->expr);
+            },
+            [&](ExprStatement &exprStmt) {
+                addExpr(exprStmt.expr);
                 ss << ";" << endl;
-                break;
             }
-        }
+        }, stmt->variant);
+
     }
 
     void addDecl(Declaration *decl) {
-        switch (decl->kind) {
-            case DeclKind::Fun: {
-                break;
-            }
-            case DeclKind::Var: {
+        rollbear::visit(overloaded {
+            [&](FunDeclaration &fun) {
+                // Do nothing
+            },
+            [&](VarDeclaration &var) {
                 addIndent();
-                auto var = (VarDeclaration*)decl;
-                addTypeName(var->type);
+                addTypeName(var.type);
                 ss << " ";
-                ss << var->name.text;
-                if (var->value) {
+                ss << var.name.text;
+                if (var.value) {
                     ss << " = ";
-                    addExpr(var->value, false);
+                    addExpr(var.value, false);
                 }
                 ss << ";" << endl;
-                break;
-            }
-            case DeclKind::Stmt: {
+            },
+            [&](Statement &stmt) {
                 addIndent();
-                addStmt((Statement*)decl);
-                break;
+                addStmt(&stmt);
             }
-        }
+        }, decl->variant);
     }
 
     void addTypedefs() {
