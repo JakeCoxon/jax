@@ -12,59 +12,63 @@ enum class StmtKind {
     Print, If, While, Return, Block, Expr
 };
 
-struct Expr {
-    ExprKind kind;
-    Type type;
-};
+struct Expr;
 
 struct FunctionCall {
-    Expr expr;
+    // Expr expr;
     FunctionDeclaration *functionDeclaration;
     int argCount;
     std::vector<Expr*> arguments;
 };
 
 struct InfixExpr {
-    Expr expr;
+    // Expr expr;
     Token operatorToken;
     Expr *left = nullptr;
     Expr *right = nullptr;
 };
 struct PropertyExpr {
-    Expr expr;
+    // Expr expr;
     Expr *left = nullptr;
     Token property;
 };
 
 struct StringLiteral {
-    Expr expr;
+    // Expr expr;
     Token name;
 };
 struct NumberLiteral {
-    Expr expr;
+    // Expr expr;
     Token name;
 };
 struct BooleanLiteral {
-    Expr expr;
+    // Expr expr;
     bool value;
 };
 
 struct AssignmentExpr {
-    Expr expr;
+    // Expr expr;
     Expr *left;
     Expr *value = nullptr;
 };
 struct VariableLiteral {
-    Expr expr;
+    // Expr expr;
     Token name;
 };
 struct ArrayLiteral {
-    Expr expr;
+    // Expr expr;
     Type elementType;
     Expr **elements;
     int numElements;
 };
 
+struct Expr {
+    // ExprKind kind;
+    Type type;
+
+    mpark::variant<FunctionCall, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
+        BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral> variant;
+};
 
 struct Declaration {
     DeclKind kind;
@@ -145,61 +149,68 @@ struct AstGen {
 
 
     void string(Token name) {
-        auto lit = new StringLiteral;
-        lit->expr.type = parser->compiler->expressionTypeStack.back();
-        lit->expr.kind = ExprKind::String;
-        lit->name = name;
-        expressionStack.push_back(&lit->expr);
+        auto expr = new Expr;
+        auto lit = StringLiteral {};
+        expr->type = parser->compiler->expressionTypeStack.back();
+        lit.name = name;
+        expr->variant = lit;
+        expressionStack.push_back(expr);
     }
     void number(Token name) {
-        auto lit = new NumberLiteral;
-        lit->expr.type = parser->compiler->expressionTypeStack.back();
-        lit->expr.kind = ExprKind::Number;
-        lit->name = name;
-        expressionStack.push_back(&lit->expr);
+        auto expr = new Expr;
+        auto lit = NumberLiteral {};
+        expr->type = parser->compiler->expressionTypeStack.back();
+        lit.name = name;
+        expr->variant = lit;
+        expressionStack.push_back(expr);
     }
     void variable(Token name) {
-        auto var = new VariableLiteral;
-        var->expr.type = parser->compiler->expressionTypeStack.back();
-        var->expr.kind = ExprKind::Var;
-        var->name = name;
-        expressionStack.push_back(&var->expr);
+        auto expr = new Expr;
+        auto var = VariableLiteral {};
+        expr->type = parser->compiler->expressionTypeStack.back();
+        var.name = name;
+        expr->variant = var;
+        expressionStack.push_back(expr);
     }
     void booleanLiteral(bool value) {
-        auto b = new BooleanLiteral;
-        b->expr.type = parser->compiler->expressionTypeStack.back();
-        b->expr.kind = ExprKind::Boolean;
-        b->value = value;
-        expressionStack.push_back(&b->expr);
+        auto expr = new Expr;
+        auto b = BooleanLiteral {};
+        expr->type = parser->compiler->expressionTypeStack.back();
+        b.value = value;
+        expr->variant = b;
+        expressionStack.push_back(expr);
     }
 
     void property(Token property) {
-        auto prop = new PropertyExpr;
-        prop->expr.type = parser->compiler->expressionTypeStack.back();
-        prop->expr.kind = ExprKind::Property;
-        prop->left = popExpression();
-        prop->property = property;
-        expressionStack.push_back(&prop->expr);
+        auto expr = new Expr;
+        auto prop = PropertyExpr {};
+        prop.left = popExpression();
+        prop.property = property;
+        expr->type = parser->compiler->expressionTypeStack.back();
+        expr->variant = prop;
+        expressionStack.push_back(expr);
     }
     void assignment() {
-        auto assgn = new AssignmentExpr;
-        assgn->expr.type = parser->compiler->expressionTypeStack.back();
-        assgn->expr.kind = ExprKind::Assignment;
-        assgn->value = popExpression();
-        assgn->left = popExpression();
-        expressionStack.push_back(&assgn->expr);
+        auto expr = new Expr;
+        auto assgn = AssignmentExpr {};
+        assgn.value = popExpression();
+        assgn.left = popExpression();
+        expr->type = parser->compiler->expressionTypeStack.back();
+        expr->variant = assgn;
+        expressionStack.push_back(expr);
     }
 
     void infix(Token operatorToken) {
+        auto expr = new Expr;
         Expr *right = popExpression();
         Expr *left = popExpression();
-        auto infix = new InfixExpr;
-        infix->expr.type = parser->compiler->expressionTypeStack.back();
-        infix->expr.kind = ExprKind::Infix;
-        infix->operatorToken = operatorToken;
-        infix->left = left;
-        infix->right = right;
-        expressionStack.push_back(&infix->expr);
+        auto infix = InfixExpr {};
+        expr->type = parser->compiler->expressionTypeStack.back();
+        infix.operatorToken = operatorToken;
+        infix.left = left;
+        infix.right = right;
+        expr->variant = infix;
+        expressionStack.push_back(expr);
     }
 
     void functionCall(FunctionInstantiation inst, int argCount) {
@@ -207,30 +218,32 @@ struct AstGen {
         for (int i = 0; i < argCount; i++) {
             args.insert(args.begin(), 1, popExpression());
         }
-        auto call = new FunctionCall();
-        call->expr.kind = ExprKind::FunctionCall;
-        call->expr.type = parser->compiler->expressionTypeStack.back();
-        call->argCount = argCount;
-        call->arguments = args;
-        call->functionDeclaration = inst.declaration;
-        expressionStack.push_back(&call->expr);
+        auto expr = new Expr();
+        expr->type = parser->compiler->expressionTypeStack.back();
+        auto call = FunctionCall {};
+        call.argCount = argCount;
+        call.arguments = args;
+        call.functionDeclaration = inst.declaration;
+        expr->variant = call;
+        expressionStack.push_back(expr);
     }
 
     void arrayLiteral(int numElements, Type elementType) {
-        auto array = new ArrayLiteral;
-        array->expr.kind = ExprKind::Array;
-        array->expr.type = parser->compiler->expressionTypeStack.back();
-        array->elementType = elementType;
-        array->numElements = numElements;
-        array->elements = new Expr*[numElements];
+        auto expr = new Expr();
+        expr->type = parser->compiler->expressionTypeStack.back();
+        auto array = ArrayLiteral {};
+        array.elementType = elementType;
+        array.numElements = numElements;
+        array.elements = new Expr*[numElements];
         assert(expressionStack.size() >= (size_t)numElements);
         for (int i = 0; i < numElements; i++) {
-            array->elements[i] = expressionStack[expressionStack.size() - numElements + i];
+            array.elements[i] = expressionStack[expressionStack.size() - numElements + i];
         }
         for (int i = 0; i < numElements; i++) {
             popExpression();
         }
-        expressionStack.push_back(&array->expr);
+        expr->variant = array;
+        expressionStack.push_back(expr);
     }
 
     // Declarations
@@ -411,55 +424,41 @@ struct CodeGen {
     }
 
     void addExpr(Expr *expr, bool parens = true) {
-        switch (expr->kind) {
-            case ExprKind::String: {
-                ss << ((StringLiteral*)expr)->name.text;
-                break;
-            }
-            
-            case ExprKind::Number: {
-                ss << ((NumberLiteral*)expr)->name.text;
-                break;
-            }
-            
-            case ExprKind::Boolean: {
-                ss << (((BooleanLiteral*)expr)->value ? "true" : "false");
-                break;
-            }
-            
-            case ExprKind::Assignment: {
-                addExpr(((AssignmentExpr*)expr)->left);
-                ss << " = ";
-                addExpr(((AssignmentExpr*)expr)->value, false);
-                break;
-            }
-            
-            case ExprKind::Property: {
-                addExpr(((PropertyExpr*)expr)->left);
-                ss << ".";
-                ss << ((PropertyExpr*)expr)->property.text;
-                break;
-            }
-            
-            case ExprKind::Var: {
-                ss << ((VariableLiteral*)expr)->name.text;
-                break;
-            }
-            case ExprKind::Infix: {
-                auto infix = (InfixExpr*)expr;
+        rollbear::visit(overloaded {
+            [&](InfixExpr &infix) {
                 if (parens) ss << "(";
-                addExpr(infix->left);
-                ss << " " << infix->operatorToken.text << " ";
-                addExpr(infix->right);
+                addExpr(infix.left);
+                ss << " " << infix.operatorToken.text << " ";
+                addExpr(infix.right);
                 if (parens) ss << ")";
-                break;
-            }
-            case ExprKind::FunctionCall: {
-                auto call = (FunctionCall*)expr;
-                ss << call->functionDeclaration->name;
+            },
+            [&](PropertyExpr &ex) {
+                addExpr(ex.left);
+                ss << ".";
+                ss << ex.property.text;
+            },
+            [&](StringLiteral &ex) {
+                ss << ex.name.text;
+            },
+            [&](NumberLiteral &ex) {
+                ss << ex.name.text;
+            },
+            [&](BooleanLiteral &ex) {
+                ss << (ex.value ? "true" : "false");
+            },
+            [&](AssignmentExpr &ex) {
+                addExpr(ex.left);
+                ss << " = ";
+                addExpr(ex.value, false);
+            },
+            [&](VariableLiteral &ex) {
+                ss << ex.name.text;
+            },
+            [&](FunctionCall &call) {
+                ss << call.functionDeclaration->name;
                 ss << "(";
                 size_t i = 0; 
-                for (Expr *arg : call->arguments) {
+                for (Expr *arg : call.arguments) {
                     if (i > 0) {
                         ss << ", ";
                     }
@@ -467,28 +466,25 @@ struct CodeGen {
                     i++;
                 }
                 ss << ")";
-                break;
-            }
-            case ExprKind::Array: {
-                auto array = (ArrayLiteral*)expr;
+            },
+            [&](ArrayLiteral &array) {
                 ss << "new_array_from_literal(";
-                ss << array->numElements << ", ";
-                ss << array->numElements << ", ";
+                ss << array.numElements << ", ";
+                ss << array.numElements << ", ";
                 ss << "sizeof(";
-                addTypeName(array->elementType);
+                addTypeName(array.elementType);
                 ss << "), ((";
-                addTypeName(array->elementType);
-                ss << "[" << array->numElements << "]){";
-                for (int i = 0; i < array->numElements; i++) {
+                addTypeName(array.elementType);
+                ss << "[" << array.numElements << "]){";
+                for (int i = 0; i < array.numElements; i++) {
                     if (i > 0) {
                         ss << ", ";
                     }
-                    addExpr(array->elements[i]);
+                    addExpr(array.elements[i]);
                 }
                 ss << "}))";
-                break;
-            }
-        }
+            },
+        }, expr->variant);
     }
 
     void addStmt(Statement *stmt) {
