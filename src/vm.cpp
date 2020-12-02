@@ -127,6 +127,7 @@ namespace types {
     const Type Dynamic  = new TypeData{4, PrimitiveTypeData{"dynamic"}};
     const Type Unknown  = new TypeData{5, PrimitiveTypeData{"unknown"}};
     const Type Function = new TypeData{6, PrimitiveTypeData{"function"}};
+    const Type VoidPtr  = new TypeData{7, PrimitiveTypeData{"voidptr"}};
 }
 
 

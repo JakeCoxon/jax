@@ -3,7 +3,7 @@
 using std::endl;
 
 enum class ExprKind {
-    FunctionCall, Infix, String, Number, Boolean, Assignment, Var, Property
+    FunctionCall, Infix, String, Number, Boolean, Assignment, Var, Property, Array
 };
 enum class DeclKind {
     Fun, Var, Stmt
@@ -57,6 +57,12 @@ struct AssignmentExpr {
 struct VariableLiteral {
     Expr expr;
     Token name;
+};
+struct ArrayLiteral {
+    Expr expr;
+    Type elementType;
+    Expr **elements;
+    int numElements;
 };
 
 
@@ -210,6 +216,23 @@ struct AstGen {
         expressionStack.push_back(&call->expr);
     }
 
+    void arrayLiteral(int numElements, Type elementType) {
+        auto array = new ArrayLiteral;
+        array->expr.kind = ExprKind::Array;
+        array->expr.type = parser->compiler->expressionTypeStack.back();
+        array->elementType = elementType;
+        array->numElements = numElements;
+        array->elements = new Expr*[numElements];
+        assert(expressionStack.size() >= (size_t)numElements);
+        for (int i = 0; i < numElements; i++) {
+            array->elements[i] = expressionStack[expressionStack.size() - numElements + i];
+        }
+        for (int i = 0; i < numElements; i++) {
+            popExpression();
+        }
+        expressionStack.push_back(&array->expr);
+    }
+
     // Declarations
 
     void exprStatement() {
@@ -259,11 +282,11 @@ struct AstGen {
         nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
     }
     
-    void varDeclaration(Token name, Type type) {
+    void varDeclaration(Token name, Type type, bool initializer) {
         auto varDecl = new VarDeclaration;
         varDecl->decl.kind = DeclKind::Var;
         varDecl->name = name;
-        varDecl->value = expressionStack.size() > 0 ? popExpression() : nullptr;
+        varDecl->value = initializer > 0 ? popExpression() : nullptr;
         varDecl->type = type;
         declarationStack.push_back(&varDecl->decl);
 
@@ -336,6 +359,9 @@ struct CodeGen {
         else if (type == types::Unknown)  { ss << "UNKNOWN"; }
         else if (type == types::Function) { ss << "FUNCTION"; }
         else {
+            if (type->isPrimitive()) {
+                ss << type->primitiveTypeData()->name;
+            }
             if (type->isStruct()) {
                 ss << type->structTypeData()->name;
             }
@@ -434,13 +460,33 @@ struct CodeGen {
                 ss << "(";
                 size_t i = 0; 
                 for (Expr *arg : call->arguments) {
-                    addExpr(arg, false);
-                    if (i < call->arguments.size() - 1) {
+                    if (i > 0) {
                         ss << ", ";
                     }
+                    addExpr(arg, false);
                     i++;
                 }
                 ss << ")";
+                break;
+            }
+            case ExprKind::Array: {
+                auto array = (ArrayLiteral*)expr;
+                ss << "new_array_from_literal(";
+                ss << array->numElements << ", ";
+                ss << array->numElements << ", ";
+                ss << "sizeof(";
+                addTypeName(array->elementType);
+                ss << "), ((";
+                addTypeName(array->elementType);
+                ss << "[" << array->numElements << "]){";
+                for (int i = 0; i < array->numElements; i++) {
+                    if (i > 0) {
+                        ss << ", ";
+                    }
+                    addExpr(array->elements[i]);
+                }
+                ss << "}))";
+                break;
             }
         }
     }
@@ -454,6 +500,7 @@ struct CodeGen {
                 if (type == types::Number) ss << "%f";
                 else if (type == types::String) ss << "%s";
                 else if (type == types::Bool) ss << "%s";
+                else if (type == types::VoidPtr) ss << "%p";
                 else {
                     assert(false); // Not implemented
                 }
@@ -550,9 +597,12 @@ struct CodeGen {
         ss << "#define false 0" << endl;
         ss << "typedef int bool;" << endl;
         ss << "typedef char* string;" << endl;
+        ss << "typedef void* voidptr;" << endl;
         ss << "double clock_seconds() { return (double)clock() / CLOCKS_PER_SEC; }" << endl;
         ss << "string alloc_string(int length) { return (string)malloc(length * sizeof(string)); }" << endl;
         ss << "string string_concat(string a, string b) { string dst = (string)malloc((strlen(a) + strlen(b)) * sizeof(string)); strcpy(dst, a); strcat(dst, b); return dst; }" << endl;
+        ss << "#define array_index(a, i) (a.data + (int)i * (int)a.elem_size)" << endl;
+        ss << "#define deref_double_array(a) (*(double*)a)" << endl;
         ss << endl;
     }
     

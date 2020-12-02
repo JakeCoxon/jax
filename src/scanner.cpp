@@ -2,6 +2,7 @@ enum class TokenType {
     // Single-character tokens.
     LeftParen, RightParen,
     LeftBrace, RightBrace,
+    LeftSquare, RightSquare,
     Comma, Dot, Minus, Plus,
     Semicolon, Slash, Star,
     Colon, At,
@@ -146,6 +147,8 @@ Token Scanner::scanToken() {
         case ')': parens --; return makeToken(TokenType::RightParen);
         case '{': return makeToken(TokenType::LeftBrace);
         case '}': return makeToken(TokenType::RightBrace);
+        case '[': return makeToken(TokenType::LeftSquare);
+        case ']': return makeToken(TokenType::RightSquare);
         case ';': return makeToken(TokenType::Semicolon);
         case ',': return makeToken(TokenType::Comma);
         case '.': return makeToken(TokenType::Dot);

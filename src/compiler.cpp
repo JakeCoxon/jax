@@ -43,7 +43,7 @@ struct FunctionDeclaration;
 
 struct FunctionInstantiation {
     Type type;
-    Value function = mpark::monostate();
+    ObjFunction *function = nullptr;
     Compiler *compiler = nullptr;
     FunctionDeclaration *declaration = nullptr;
 };
@@ -127,7 +127,9 @@ struct Parser {
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
     FunctionInstantiation *getInstantiationFromStack(FunctionDeclaration *functionDeclaration, int argCount);
-    FunctionInstantiation maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount);
+    void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
+    FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
+
     void beginScope();
     void endScope();
 
@@ -153,6 +155,7 @@ struct Parser {
 
     void number(ExpressionState es);
     void grouping(ExpressionState es);
+    void arraylit(ExpressionState es);
     void unary(ExpressionState es);
     void binary(ExpressionState es);
     void literal(ExpressionState es);
@@ -454,6 +457,18 @@ void Parser::initCompiler(Compiler *compiler) {
 
 
 ObjFunction *Parser::endCompiler() {
+
+    for (size_t i = 0; i < compiler->functionDeclarations.size(); i++) {
+        if (!compiler->functionDeclarations[i]->polymorphic) {
+            if (compiler->functionDeclarations[i]->overloads.size() != 0) {
+                continue;
+            }
+            auto inst = createInstantiation(compiler->functionDeclarations[i]);
+            typecheckInstantiationFromArgumentList(this, inst);
+            compileFunctionInstantiation(*inst);
+        }
+    }
+    
     emitReturn();
 
     ObjFunction *function = compiler->function;
@@ -488,18 +503,17 @@ FunctionInstantiation *Parser::getInstantiationFromStack(FunctionDeclaration *fu
     return nullptr;
 }
 
-FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclaration *functionDeclaration, int argCount) {
-    
-    Compiler *initialCompiler = this->compiler;
-    Scanner *initialScanner = this->scanner;
 
-    auto inst = getInstantiationFromStack(functionDeclaration, argCount);
-    if (inst) return *inst;
+FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *functionDeclaration) {
 
     // TODO: Garbage collection
     auto newFunction = new ObjFunction();
     Compiler *compiler = new Compiler(newFunction, CompilerType::Function, functionDeclaration->enclosingCompiler);
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
+
+    // TODO: Garbage collection
+    compiler->function->name = new ObjString(std::string(functionDeclaration->name));
+    compiler->function->arity = functionDeclaration->parameters.size();
 
     compiler->compiled = true; // Mark this so we don't recurse
 
@@ -507,6 +521,19 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
         functionType, newFunction, compiler, functionDeclaration
     };
     functionDeclaration->overloads.push_back(functionInst);
+
+    return &functionDeclaration->overloads.back();
+}
+
+void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
+    
+    Compiler *initialCompiler = this->compiler;
+    Scanner *initialScanner = this->scanner;
+    FunctionDeclaration *functionDeclaration = functionInst.declaration;
+    ObjFunction* newFunction = functionInst.function;
+    Type functionType = functionInst.type;
+    auto functionTypeObj = functionType->functionTypeData();
+    Compiler *compiler = functionInst.compiler;
 
     if (functionDeclaration->isExtern) {
         typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
@@ -516,10 +543,6 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
         ast->beginFunctionDeclaration(functionInst);
         
         this->compiler = compiler;
-        
-        // TODO: Garbage collection
-        compiler->function->name = new ObjString(std::string(functionDeclaration->name));
-        compiler->function->arity = functionDeclaration->parameters.size();
 
         // I don't think we want to push the current function/top level script on the stack anymore
         // compiler->locals.push_back(Local("", 0, 0)); // Function object
@@ -529,9 +552,13 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
         for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
             compiler->declareVariable(this, functionDeclaration->parameters[i].name);
             compiler->markInitialized();
-            size_t end = initialCompiler->expressionTypeStack.size();
-            Type argumentType = initialCompiler->expressionTypeStack[end - argCount + i];
-            typecheckParameter(this, newFunction, functionType, argumentType);
+
+            Local &local = compiler->locals.back();
+            local.type = functionTypeObj->parameterTypes[i];
+            local.stackOffset = compiler->nextStackSlot;
+            int slotSize = slotSizeOfType(local.type);
+            compiler->nextStackSlot += slotSize;
+            newFunction->argSlots += slotSize;
         }
 
         typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
@@ -556,8 +583,7 @@ FunctionInstantiation Parser::maybeCompileFunctionInstantiation(FunctionDeclarat
         this->compiler = initialCompiler;
     }
 
-    typecheckUpdateFunctionInstantiation(this, newFunction->type, argCount);
-    return functionInst;
+    typecheckUpdateFunctionInstantiation(this, newFunction->type, newFunction->arity);
 }
 
 void Parser::beginScope() {
@@ -837,7 +863,10 @@ void Parser::varDeclaration() {
         type = typeByName(this, previous().text);
     }
 
+    bool initializer = false;
+
     if (match(TokenType::Equal)) {
+        initializer = true;
         expression();
         Type valueType = typecheckVarDeclaration(this, type, true);
         if (type == types::Void) {
@@ -851,7 +880,7 @@ void Parser::varDeclaration() {
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     compiler->markInitialized();
 
-    ast->varDeclaration(nameToken, type);
+    ast->varDeclaration(nameToken, type, initializer);
 }
 
 void Parser::expression() {
@@ -1000,6 +1029,29 @@ void Parser::number(ExpressionState es) {
 void Parser::grouping(ExpressionState es) {
     expression();
     consume(TokenType::RightParen, "Expect ')' after expression.");
+}
+
+void Parser::arraylit(ExpressionState es) {
+    int numElements = 0;
+    Type elementType = types::Void;
+    while (true) {
+        expression();
+        Type itElementType = compiler->expressionTypeStack.back();
+        compiler->expressionTypeStack.pop_back();
+        if (numElements == 0) {
+            elementType = itElementType;
+        } else if (!typecheckIsAssignable(this, elementType, itElementType)) {
+            error("Can't put this is the array .");
+        }
+        numElements ++;
+        if (match(TokenType::RightSquare)) break;
+        consume(TokenType::Comma, "Expect ',' or ']' after array element list.");
+    }
+
+    Type returnType = typesByName["array"];
+    compiler->expressionTypeStack.push_back(returnType);
+    
+    ast->arrayLiteral(numElements, elementType);
 }
 
 void Parser::unary(ExpressionState es) {
@@ -1174,18 +1226,24 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     // emitByte(0xFF);
     size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
-    FunctionInstantiation inst = maybeCompileFunctionInstantiation(functionDeclaration, argCount);
 
-    uint16_t constant = makeConstant(inst.function);
+    auto inst = getInstantiationFromStack(functionDeclaration, argCount);
+    if (!inst) {
+        inst = createInstantiation(functionDeclaration);
+        typecheckInstantiationAgainstStack(this, inst, argCount);
+        compileFunctionInstantiation(*inst);
+    }
+
+    uint16_t constant = makeConstant(inst->function);
     assert(constant < 256);
     // currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
     // currentChunk().code[patchIndex] = constant & 0xff;
     
-    typecheckEndFunctionCall(this, inst.function, argCount);
+    typecheckEndFunctionCall(this, inst->function, argCount);
     emitByte(OpCode::Call);
     emitByte(constant);
 
-    ast->functionCall(inst, argCount);
+    ast->functionCall(*inst, argCount);
 }
 
 void Parser::variable(ExpressionState es) {
@@ -1250,6 +1308,8 @@ ParseRule rules[] = {
     {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
     {nullptr,           nullptr,           Precedence::None},       // RightParen
     {nullptr,           nullptr,           Precedence::None},       // LeftBrace
+    {nullptr,           nullptr,           Precedence::None},       // RightBrace
+    {&Parser::arraylit, nullptr,           Precedence::None},       // LeftBrace
     {nullptr,           nullptr,           Precedence::None},       // RightBrace
     {nullptr,           nullptr,           Precedence::None},       // Comma
     {nullptr,           &Parser::dot,      Precedence::Call},       // Dot

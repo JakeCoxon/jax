@@ -2,6 +2,8 @@
 fun clock_seconds(): number @extern
 fun alloc_string(length: number): string @extern
 fun string_concat(a: string, b: string): string @extern
+fun calloc(num: number, size: number): voidptr @extern
+fun memcpy(dest: voidptr, src: voidptr, size: number): voidptr @extern
 
 var start = clock_seconds()
 
@@ -57,9 +59,35 @@ me.age = 200
 
 print(me.firstname)
 print(me.age + 10)
-var fullname = string_concat(me.firstname, me.lastname)
+var fullname = string_concat(string_concat(me.firstname, " "), me.lastname)
 print(fullname)
 
+
+struct array {
+  elem_size: number
+  data: voidptr
+  len: number
+  cap: number
+}
+fun new_array_from_literal(len: number, cap: number, elem_size: number, c_array: voidptr): array {
+  var a: array
+  a.data = calloc(len, elem_size)
+  a.elem_size = elem_size
+  a.len = len
+  a.cap = cap
+  memcpy(a.data, c_array, len * elem_size)
+  return a
+}
+fun array_index(a: array, i: number): voidptr @extern
+fun deref_double_array(a: voidptr): number @extern
+
+var a = [10, 2.22, 33123123.0, 123123, 2.34]
+
+var i = 0
+while i < a.len {
+  print(deref_double_array(array_index(a, i)))
+  i = i + 1
+}
 
 
 // print(things(5, 6))

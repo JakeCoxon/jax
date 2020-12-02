@@ -43,6 +43,9 @@ void typecheckInit(Parser *parser) {
     parser->types.push_back(types::Unknown); // Unknown
     parser->typesByName["unknown"] = parser->types.back();
     parser->types.push_back(types::Function); // Function placeholder
+    
+    parser->types.push_back(types::VoidPtr); // voidptr
+    parser->typesByName["voidptr"] = parser->types.back();
 }
 
 void typecheckPop(Parser *parser) {
@@ -226,16 +229,8 @@ void typecheckVariable(Parser *parser, int local) {
 
 
 void typecheckParameter(Parser *parser, ObjFunction *function, Type functionType, Type argumentType) {
-    Local &local = parser->compiler->locals.back();
-    local.type = argumentType;
-    local.stackOffset = parser->compiler->nextStackSlot;
-    int slotSize = slotSizeOfType(argumentType);
-    parser->compiler->nextStackSlot += slotSize;
-    function->argSlots += slotSize;
-
     auto functionTypeObj = functionType->functionTypeData();
     functionTypeObj->parameterTypes.push_back(argumentType);
-
 }
 
 Type typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
@@ -255,6 +250,23 @@ void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, T
     // } else {
     //     function->returnSlots = 0;
     // }
+}
+
+void typecheckInstantiationFromArgumentList(Parser *parser, FunctionInstantiation *functionInst) {
+    assert(!functionInst->declaration->polymorphic);
+
+    for (size_t i = 0; i < functionInst->declaration->parameters.size(); i++) {
+        Type argumentType = functionInst->declaration->parameters[i].type;
+        typecheckParameter(parser, functionInst->function, functionInst->type, argumentType);
+    }
+}
+
+void typecheckInstantiationAgainstStack(Parser *parser, FunctionInstantiation *functionInst, int argCount) {
+    size_t end = parser->compiler->expressionTypeStack.size();
+    for (size_t i = 0; i < functionInst->declaration->parameters.size(); i++) {
+        Type argumentType = parser->compiler->expressionTypeStack[end - argCount + i];
+        typecheckParameter(parser, functionInst->function, functionInst->type, argumentType);
+    }
 }
 
 Type getFunctionType(Parser *parser) {
