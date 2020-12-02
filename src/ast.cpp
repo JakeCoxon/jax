@@ -131,6 +131,7 @@ struct AstGen {
 
 
     Expr *popExpression() {
+        if (expressionStack.size() == 0) throw "Stack empty";
         Expr *expr = expressionStack.back();
         expressionStack.pop_back();
         return expr;
@@ -262,7 +263,7 @@ struct AstGen {
         auto varDecl = new VarDeclaration;
         varDecl->decl.kind = DeclKind::Var;
         varDecl->name = name;
-        varDecl->value = popExpression();
+        varDecl->value = expressionStack.size() > 0 ? popExpression() : nullptr;
         varDecl->type = type;
         declarationStack.push_back(&varDecl->decl);
 
@@ -543,11 +544,15 @@ struct CodeGen {
     void addTypedefs() {
         ss << "#include <time.h>" << endl;
         ss << "#include <stdio.h>" << endl;
+        ss << "#include <stdlib.h>" << endl;
+        ss << "#include <string.h>" << endl;
         ss << "#define true 1" << endl;
         ss << "#define false 0" << endl;
         ss << "typedef int bool;" << endl;
         ss << "typedef char* string;" << endl;
         ss << "double clock_seconds() { return (double)clock() / CLOCKS_PER_SEC; }" << endl;
+        ss << "string alloc_string(int length) { return (string)malloc(length * sizeof(string)); }" << endl;
+        ss << "string string_concat(string a, string b) { string dst = (string)malloc((strlen(a) + strlen(b)) * sizeof(string)); strcpy(dst, a); strcat(dst, b); return dst; }" << endl;
         ss << endl;
     }
     

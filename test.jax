@@ -1,5 +1,7 @@
 
 fun clock_seconds(): number @extern
+fun alloc_string(length: number): string @extern
+fun string_concat(a: string, b: string): string @extern
 
 var start = clock_seconds()
 
@@ -54,7 +56,12 @@ me.lastname = "Someone"
 me.age = 200
 
 print(me.firstname)
-print(me.age)
+print(me.age + 10)
+var fullname = string_concat(me.firstname, me.lastname)
+print(fullname)
+
+
+
 // print(things(5, 6))
 // things("asd", "asd")
 // print(200 + things(true, 6))
@@ -82,7 +89,7 @@ fun fib(n): number {
  if n < 2 {
    return n
  }
- return fib(n - 2) + fib(n - 1);
+ return fib(n - 2) + fib(n - 1)
 }
 
 print("{}", fib(35) == 9227465)
