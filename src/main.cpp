@@ -37,7 +37,7 @@ std::string readFile(const std::string &path) {
 //     if (result == InterpretResult::RuntimeError) exit(70);
 // }
 
-static void runFile(VM &vm, const std::string &path) {
+static void runFile(const std::string &path) {
     std::string source = readFile(path);
     std::string output = compileToString(source);
 
@@ -52,7 +52,8 @@ static void runFile(VM &vm, const std::string &path) {
     system("./output");
 }
 
-static void repl(VM &vm) {
+static void repl() {
+    VM vm;
     std::string line;
 
     while (true) {
@@ -68,12 +69,11 @@ static void repl(VM &vm) {
 }
 
 int main(int argc, const char* argv[]) {
-    VM vm;
 
     if (argc == 1) {
-        repl(vm);
+        repl();
     } else if (argc == 2) {
-        runFile(vm, argv[1]);
+        runFile(argv[1]);
     } else {
         std::cerr << "Usage: jax [path]" << std::endl;
         exit(64);

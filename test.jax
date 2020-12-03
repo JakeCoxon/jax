@@ -1,9 +1,15 @@
-
 fun clock_seconds(): number @extern
 fun alloc_string(length: number): string @extern
 fun string_concat(a: string, b: string): string @extern
 fun calloc(num: number, size: number): voidptr @extern
 fun memcpy(dest: voidptr, src: voidptr, size: number): voidptr @extern
+
+static {
+  var cool_thing = 3
+  print(cool_thing)
+
+  
+}
 
 var start = clock_seconds()
 
@@ -62,9 +68,7 @@ print(me.age + 10)
 var fullname = string_concat(string_concat(me.firstname, " "), me.lastname)
 print(fullname)
 
-// var @static blk = block {
 
-// }
 
 struct array {
   elem_size: number
@@ -160,5 +164,9 @@ print("{}", fib(35) == 9227465)
 //
 //}
 //
+
+static {
+  print(123)
+}
 print("time was")
 print(clock_seconds() - start)

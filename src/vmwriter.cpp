@@ -15,6 +15,18 @@ struct WhileStatementPatchState {
 struct VmWriter {
 
     Parser *parser;
+
+    VM vm;
+    ObjFunction *function;
+
+    VmWriter() {
+        function = new ObjFunction();
+        vm.frames.push_back(CallFrame { function, 0, 0 });
+    }
+
+    void run() {
+        vm.run();
+    }
     
     void emitReturn();
     void emitConstant(Value value);
@@ -34,10 +46,12 @@ struct VmWriter {
         int numSlots = 0;
         Compiler *compiler = parser->compiler;
 
-        while (compiler->locals.size() > 0 &&
-                compiler->locals.back().depth >
+        int i = compiler->locals.size() - 1;
+        while (i > 0 &&
+                compiler->locals[i].depth >
                 compiler->scopeDepth) {
-            numSlots += slotSizeOfType(compiler->locals.back().type);
+            numSlots += slotSizeOfType(compiler->locals[i].type);
+            i --;
         }
 
         emitByte(OpCode::Pop);
@@ -45,7 +59,7 @@ struct VmWriter {
     }
 
     void print() {
-        emitByte(OpCode::Print);
+        emitByte(OpCode::PrintDouble);
         emitByte(1); // 1 only for now
     }
     void returnStatement(bool isNil) {
@@ -242,7 +256,7 @@ struct VmWriter {
 
 };
 Chunk &VmWriter::currentChunk() { 
-    return parser->compiler->function->chunk;
+    return function->chunk;
 }
 void VmWriter::emitByte(uint8_t byte) {
     currentChunk().write(byte, parser->previous().line);

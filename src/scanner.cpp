@@ -21,6 +21,7 @@ enum class TokenType {
     For, Fun, If, Nil, Or,
     Print, Return, Super, This,
     True, Var, While, Block,
+    Static,
 
     Newline,
     Error,
@@ -209,7 +210,14 @@ TokenType Scanner::identifierType() {
             if (current - start > 1) {
                 switch (source[start + 1]) {
                     case 'u': return checkKeyword(2, "per", TokenType::Super);
-                    case 't': return checkKeyword(2, "ruct", TokenType::Struct);
+                    case 't': 
+                        if (current - start > 2) {
+                            switch (source[start + 2]) {
+                                case 'a': return checkKeyword(3, "tic", TokenType::Static);
+                                case 'r': return checkKeyword(3, "uct", TokenType::Struct);
+                            }
+                        }
+                        break;
                 }
             }
         case 't': 

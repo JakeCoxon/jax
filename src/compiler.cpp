@@ -106,6 +106,8 @@ struct Parser {
     AstGen *ast;
     VmWriter *vmWriter;
 
+    bool isBytecode = false;
+
     bool hadError = false;
     bool panicMode = false;
 
@@ -143,6 +145,7 @@ struct Parser {
 
 
     void declaration();
+    void staticDeclaration();
     void statement();
     void printStatement();
     void returnStatement();
@@ -645,11 +648,26 @@ void Parser::declaration() {
         varDeclaration();
     } else if (match(TokenType::Struct)) {
         structDeclaration();
+    } else if (match(TokenType::Static)) {
+        staticDeclaration();
     } else {
         statement();
     }
 
     if (panicMode) synchronize();
+}
+
+void Parser::staticDeclaration() {
+    if (isBytecode) {
+        error("Cannot nest static.");
+        return;
+    }
+    isBytecode = true;
+    declaration();
+
+    vmWriter->run();
+
+    isBytecode = false;
 }
 
 void Parser::statement() {
@@ -663,14 +681,15 @@ void Parser::statement() {
         whileStatement();
     } else if (match(TokenType::LeftBrace)) {
         beginScope();
-        ast->beginBlock();
+        if (!isBytecode) ast->beginBlock();
         block();
-        ast->endBlock();
+        if (!isBytecode) ast->endBlock();
         endScope();
     } else {
         expressionStatement();
     }
 }
+
 
 void Parser::printStatement() {
 
@@ -700,8 +719,8 @@ void Parser::printStatement() {
 
     typecheckPrintEnd(this, &printState, argCount);
 
-    vmWriter->print();
-    ast->print();
+    if (isBytecode) vmWriter->print();
+    else ast->print();
 }
 
 void Parser::returnStatement() {
@@ -742,26 +761,29 @@ void Parser::ifStatement() {
 
     
     beginScope();
-    patchState = vmWriter->beginIfStatementBlock();
-    ifStmtAst = ast->beginIfStatementBlock();
+    
+    if (isBytecode) { patchState = vmWriter->beginIfStatementBlock(); }
+    else { ifStmtAst = ast->beginIfStatementBlock(); }
+    
     block();
-    ast->endBlock();
-    endScope();
+    
+    if (isBytecode) vmWriter->elseStatementBlock(&patchState);
+    else ast->endBlock();
 
-    vmWriter->elseStatementBlock(&patchState);
+    endScope();
 
     if (match(TokenType::Else)) {
         consume(TokenType::LeftBrace, "Expect '{' after if.");
 
         beginScope();
 
-        ast->beginElseBlock(ifStmtAst);
+        if (!isBytecode) ast->beginElseBlock(ifStmtAst);
         block();
-        ast->endBlock();
+        if (!isBytecode) ast->endBlock();
         endScope();
     }
 
-    vmWriter->endIfStatementBlock(&patchState);
+    if (isBytecode) vmWriter->endIfStatementBlock(&patchState);
     
     consumeEndStatement("Expect ';' or newline after block.");
 }
@@ -774,29 +796,33 @@ void Parser::whileStatement() {
 
     WhileStatementPatchState patchState;
     
-    patchState = vmWriter->beginWhileStatementBlock();
+    if (isBytecode) { patchState = vmWriter->beginWhileStatementBlock(); }
 
     beginScope();
-    ast->beginWhileStatementBlock();
+    if (!isBytecode) ast->beginWhileStatementBlock();
     block();
-    ast->endBlock();
+    if (!isBytecode) ast->endBlock();
     endScope();
 
-    vmWriter->endWhileStatementBlock(&patchState);
+    if (isBytecode) vmWriter->endWhileStatementBlock(&patchState);
 
     consumeEndStatement("Expect ';' or newline after block.");
 }
 
 void Parser::varDeclaration() {
-    bool isStatic = false;
-    if (match(TokenType::At)) {
-        consume(TokenType::Identifier, "Expect identifier after '@'.");
-        if (previous().text == "static") {
-            isStatic = true;
-        }
-    }
+    // bool isBytecode = false;
+    // if (match(TokenType::At)) {
+    //     consume(TokenType::Identifier, "Expect identifier after '@'.");
+    //     if (previous().text == "static") {
+    //         isBytecode = true;
+    //     }
+    // }
     parseVariable("Expect variable name.");
-    compiler->locals.back().isStatic = isStatic;
+    compiler->locals.back().isStatic = isBytecode;
+
+    if (isBytecode) {
+        printf("Here\n");
+    }
 
     Token nameToken = previous();
 
@@ -815,15 +841,18 @@ void Parser::varDeclaration() {
         if (type == types::Void) {
             type = valueType;
         }
+        // Nothing happens the VM - it is just left on the stack
     } else {
         Type valueType = typecheckVarDeclaration(this, type, false);
-        vmWriter->varDeclarationNoValue();
+        if (isBytecode) {
+            vmWriter->varDeclarationNoValue();
+        }
         // typecheckNil(this, type);
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     compiler->markInitialized();
 
-    if (!isStatic) {
+    if (!isBytecode) {
         ast->varDeclaration(nameToken, type, initializer);
     }
 }
@@ -957,7 +986,7 @@ void Parser::structDeclaration() {
         }
     }
     Type type = addNamedType(this, typeData.name, typeData);
-    ast->structDeclaration(type);
+    if (!isBytecode) ast->structDeclaration(type);
     consume(TokenType::RightBrace, "Expect '}' after member list.");
 }
 
@@ -965,8 +994,9 @@ void Parser::structDeclaration() {
 void Parser::number(ExpressionState es) {
     
     typecheckNumber(this);
-    ast->number(previous());
-    vmWriter->number(previous());
+
+    if (isBytecode) vmWriter->number(previous());
+    else ast->number(previous());
 }
 
 void Parser::grouping(ExpressionState es) {
@@ -994,7 +1024,7 @@ void Parser::arraylit(ExpressionState es) {
     Type returnType = typesByName["array"];
     compiler->expressionTypeStack.push_back(returnType);
     
-    ast->arrayLiteral(numElements, elementType);
+    if (!isBytecode) ast->arrayLiteral(numElements, elementType);
 }
 
 void Parser::unary(ExpressionState es) {
@@ -1002,7 +1032,7 @@ void Parser::unary(ExpressionState es) {
     
     expression();
 
-    vmWriter->unary(operatorType);
+    if (isBytecode) vmWriter->unary(operatorType);
 }
 
 void Parser::binary(ExpressionState es) {
@@ -1015,9 +1045,8 @@ void Parser::binary(ExpressionState es) {
 
     typecheckBinary(this, operatorType);
 
-    vmWriter->infix(operatorType);
-
-    ast->infix(binaryToken);
+    if (isBytecode) vmWriter->infix(operatorType);
+    else ast->infix(binaryToken);
 
 }
 
@@ -1025,16 +1054,16 @@ void Parser::literal(ExpressionState es) {
     typecheckLiteral(this);
     switch (previous().type) {
         case TokenType::False: 
-            vmWriter->booleanLiteral(false);
-            ast->booleanLiteral(false);
+            if (isBytecode) vmWriter->booleanLiteral(false);
+            else ast->booleanLiteral(false);
             break;
         case TokenType::True: 
-            vmWriter->booleanLiteral(true);
-            ast->booleanLiteral(true);
+            if (isBytecode) vmWriter->booleanLiteral(true);
+            else ast->booleanLiteral(true);
             break;
         case TokenType::Nil: 
-            vmWriter->nilLiteral();
-            ast->booleanLiteral(false);
+            if (isBytecode) vmWriter->nilLiteral();
+            else ast->booleanLiteral(false);
             break;
         default: return;
     }
@@ -1043,33 +1072,37 @@ void Parser::literal(ExpressionState es) {
 void Parser::string(ExpressionState es) {
     typecheckString(this);
     
-    vmWriter->string(previous());
-    ast->string(previous());
+    if (isBytecode) vmWriter->string(previous());
+    else ast->string(previous());
 }
 
 void Parser::and_(ExpressionState es) {
     Token andToken = previous();
 
-    WhileStatementPatchState patchState = vmWriter->beginAndExpression();
+    WhileStatementPatchState patchState;
+    if (isBytecode) { patchState = vmWriter->beginAndExpression(); }
+
     parsePrecedence(Precedence::And);
 
-    vmWriter->endAndCondition(&patchState);
+    if (isBytecode) vmWriter->endAndCondition(&patchState);
+    else ast->infix(andToken);
+
     typecheckAnd(this);
 
-    ast->infix(andToken);
 }
 
 void Parser::or_(ExpressionState es) {
     Token orToken = previous();
     
     IfStatementPatchState patchState;
-    patchState = vmWriter->beginOrExpression();
+    if (isBytecode) { patchState = vmWriter->beginOrExpression(); }
 
     parsePrecedence(Precedence::Or);
-    vmWriter->endOrCondition(&patchState);
+    if (isBytecode) vmWriter->endOrCondition(&patchState);
+    else ast->infix(orToken);
+
     typecheckOr(this);
 
-    ast->infix(orToken);
 }
 
 void Parser::dot(ExpressionState es) {
@@ -1078,12 +1111,16 @@ void Parser::dot(ExpressionState es) {
     // uint8_t name = identifierConstant(previous().text);
 
     typecheckPropertyAccess(this, property.text);
-    ast->property(property);
+    if (!isBytecode) {
+        ast->property(property);
+    }
   
     if (es.canAssign && match(TokenType::Equal)) {
         expression();
         typecheckAssignExpression(this);
-        ast->assignment();
+        if (!isBytecode) {
+            ast->assignment();
+        }
         // emitBytes(OP_SET_PROPERTY, name); // TODO:
     } else {
         // emitBytes(OP_GET_PROPERTY, name);
@@ -1140,8 +1177,8 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     typecheckEndFunctionCall(this, inst->function, argCount);
     
-    ast->functionCall(*inst, argCount);
-    vmWriter->functionCall(*inst, argCount);
+    if (isBytecode) vmWriter->functionCall(*inst, argCount);
+    else ast->functionCall(*inst, argCount);
 }
 
 void Parser::variable(ExpressionState es) {
@@ -1172,16 +1209,15 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
         }
         if (arg != -1) {
             typecheckVariable(this, arg);
-            ast->variable(nameToken);
+            if (!isBytecode) ast->variable(nameToken);
 
             if (es.canAssign && match(TokenType::Equal)) {
                 expression();
                 typecheckAssignExpression(this);
-                ast->assignment();
-
-                vmWriter->namedVariable(arg, true);
+                if (isBytecode) vmWriter->namedVariable(arg, true);
+                else ast->assignment();
             } else {
-                vmWriter->namedVariable(arg, false);
+                if (isBytecode) vmWriter->namedVariable(arg, false);
             }
         } else {
             error("No variable found.");

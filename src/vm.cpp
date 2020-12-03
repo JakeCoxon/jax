@@ -300,6 +300,11 @@ InterpretResult VM::run() {
     };
 
     while (true) {
+
+        if (frame->ip >= frame->function->chunk.code.size()) {
+            return InterpretResult::Ok; // We got to the end
+        }
+
 #ifdef DEBUG_TRACE_EXECUTION
         tfm::printf("          ");
         for (auto value: stack) {
