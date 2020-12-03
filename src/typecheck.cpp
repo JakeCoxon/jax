@@ -19,14 +19,15 @@ Type typeByName(Parser *parser, const std::string_view &name) {
 
 template<typename T>
 Type addNewType(Parser *parser, T typeData) {
-    parser->types.push_back(new TypeData{ parser->types.size(), T(typeData)});
-    return parser->types.back();
+    auto type = new TypeData{ parser->types.size(), T(typeData)};
+    parser->types.push_back(type);
+    return type;
 }
 template<typename T>
 Type addNamedType(Parser *parser, const std::string &name, T typeData) {
-    addNewType(parser, typeData);
-    parser->typesByName[name] = parser->types.back();
-    return parser->types.back();
+    auto type = addNewType(parser, typeData);
+    parser->typesByName[name] = type;
+    return type;
 }
 
 void typecheckInit(Parser *parser) {
@@ -302,11 +303,6 @@ void typecheckEndFunctionCall(Parser *parser, Value function, int argCount) {
     parser->compiler->expressionTypeStack.pop_back();
     auto functionTypeObj = functionType->functionTypeData();
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);
-}
-
-void typecheckUpdateFunctionInstantiation(Parser *parser, Type functionType, int argCount) {
-    auto &arg = parser->compiler->expressionTypeStack[parser->compiler->expressionTypeStack.size() - 1 - argCount];
-    arg = functionType;
 }
 
 void typecheckReturn(Parser *parser, ObjFunction *function) {

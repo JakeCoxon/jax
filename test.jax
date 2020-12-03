@@ -94,13 +94,13 @@ while i < a.len {
 // things("asd", "asd")
 // print(200 + things(true, 6))
 
-// fun compare(x, y) {
+fun compare(x, y) {
  
-//   if x == y {
-//     print("They are the same")
-//   }
-// }
-// compare("hello", "jello")
+  if x == y {
+    print("They are the same")
+  }
+}
+compare("hello", "jello")
 // compare(5, 5)
 
 // fun test_thing(thing): placeholder {

@@ -279,7 +279,8 @@ std::string compileToString(const std::string &source) {
 
     parser.endCompiler();
 
-    return generateCodeC(&ast);
+    std::string text = generateCodeC(&ast);
+    return text;
     
 }
 
@@ -583,7 +584,6 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
         this->compiler = initialCompiler;
     }
 
-    typecheckUpdateFunctionInstantiation(this, newFunction->type, newFunction->arity);
 }
 
 void Parser::beginScope() {
@@ -1285,18 +1285,17 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
             size_t stackOffset = compiler->locals[arg].stackOffset;
             assert(stackOffset < 256);
 
+            typecheckVariable(this, arg);
+            ast->variable(nameToken);
+
             if (es.canAssign && match(TokenType::Equal)) {
-                ast->variable(nameToken);
                 expression();
-                emitByte(setOp); emitByte((uint8_t)stackOffset);
-                typecheckAssign(this, arg);
-                
+                typecheckAssignExpression(this);
                 ast->assignment();
+
+                emitByte(setOp); emitByte((uint8_t)stackOffset);
             } else {
                 emitByte(getOp); emitByte((uint8_t)stackOffset);
-                typecheckVariable(this, arg);
-
-                ast->variable(nameToken);
             }
         } else {
             error("No variable found.");

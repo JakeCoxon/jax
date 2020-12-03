@@ -36,7 +36,7 @@ struct Token {
 };
 
 struct Scanner {
-    std::string source;
+    const std::string &source;
     size_t start = 0;
     size_t current = 0;
     size_t lineStart = 0;

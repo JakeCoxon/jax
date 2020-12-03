@@ -329,6 +329,7 @@ struct AstGen {
         nextDeclarationStack.push_back(&block->firstDeclaration);
     }
     void endBlock() {
+        assert(nextDeclarationStack.size());
         nextDeclarationStack.pop_back();
     }
 
@@ -343,6 +344,7 @@ struct AstGen {
         nextDeclarationStack.push_back(&func->firstDeclaration);
     }
     void endFunctionDeclaration() {
+        assert(nextDeclarationStack.size());
         nextDeclarationStack.pop_back();
     }
 
