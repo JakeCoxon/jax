@@ -47,15 +47,17 @@ struct VmWriter {
         Compiler *compiler = parser->compiler;
 
         int i = compiler->locals.size() - 1;
-        while (i > 0 &&
+        while (i >= 0 &&
                 compiler->locals[i].depth >
                 compiler->scopeDepth) {
             numSlots += slotSizeOfType(compiler->locals[i].type);
             i --;
         }
 
-        emitByte(OpCode::Pop);
-        emitByte(numSlots);
+        if (numSlots) {
+            emitByte(OpCode::Pop);
+            emitByte(numSlots);
+        }
     }
 
     void print() {

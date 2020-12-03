@@ -11,6 +11,10 @@ static {
   
 }
 
+static if 3 > 2 {
+  print(200)
+}
+
 var start = clock_seconds()
 
 var apple = 5

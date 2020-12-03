@@ -238,6 +238,7 @@ struct VM {
         size_t index = stack.size() - num_slots;
         auto value = reinterpret_cast<T*>(&stack[index]);
         // auto value = stack.back();
+        assert(stack.size() >= num_slots);
         for (int i = 0; i < num_slots; i++) {
             stack.pop_back();
         }
@@ -301,18 +302,22 @@ InterpretResult VM::run() {
 
     while (true) {
 
-        if (frame->ip >= frame->function->chunk.code.size()) {
-            return InterpretResult::Ok; // We got to the end
-        }
-
 #ifdef DEBUG_TRACE_EXECUTION
         tfm::printf("          ");
         for (auto value: stack) {
             tfm::printf("[ %s ]", value);
         }
         tfm::printf("\n");
+#endif
+
+        if (frame->ip >= frame->function->chunk.code.size()) {
+            return InterpretResult::Ok; // We got to the end
+        }
+
+#ifdef DEBUG_TRACE_EXECUTION
         disassembleInstruction(frame->function->chunk, frame->ip);
 #endif
+        
 
         auto instruction = OpCode(readByte());
         switch (instruction) {
@@ -431,7 +436,6 @@ InterpretResult VM::run() {
                 double result = pop<double>();
                 frames.pop_back();
                 if (frames.size() == 0) {
-                    pop<double>();
                     return InterpretResult::Ok;    
                 }
                 int slots = stack.size() - frame->firstSlot;

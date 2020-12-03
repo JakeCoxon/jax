@@ -470,7 +470,7 @@ ObjFunction *Parser::endCompiler() {
         }
     }
     
-    vmWriter->endCompiler();
+    if (isBytecode) vmWriter->endCompiler(); // TODO: Is this ever needed?
 
     ObjFunction *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
@@ -593,7 +593,7 @@ void Parser::beginScope() {
 void Parser::endScope() {
     compiler->scopeDepth --;
 
-    vmWriter->endScope();
+    if (isBytecode) vmWriter->endScope();
     
     while (compiler->locals.size() > 0 &&
             compiler->locals.back().depth >
@@ -729,14 +729,14 @@ void Parser::returnStatement() {
     }
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
         typecheckReturnNil(this, compiler->function);
-        vmWriter->returnStatement(true);
-        ast->returnStatement(true);
+        if (isBytecode) vmWriter->returnStatement(true);
+        else ast->returnStatement(true);
     } else {
         expression();
         consumeEndStatement("Expect ';' or newline after return value");
         typecheckReturn(this, compiler->function);
-        vmWriter->returnStatement(false);
-        ast->returnStatement(false);
+        if (isBytecode) vmWriter->returnStatement(false);
+        else ast->returnStatement(false);
     }
 
 }
@@ -746,31 +746,29 @@ void Parser::expressionStatement() {
     consumeEndStatement("Expect ';' or newline after expression.");
     typecheckEndStatement(this);
 
-    vmWriter->exprStatement();
-    ast->exprStatement();
+    if (isBytecode) vmWriter->exprStatement();
+    else ast->exprStatement();
 }
 
 void Parser::ifStatement() {
     expression();
     
-    typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after if.");
 
     IfStatement *ifStmtAst;
     IfStatementPatchState patchState;
 
-    
-    beginScope();
-    
     if (isBytecode) { patchState = vmWriter->beginIfStatementBlock(); }
     else { ifStmtAst = ast->beginIfStatementBlock(); }
     
+    typecheckIfCondition(this);
+
+    beginScope();
     block();
-    
+    endScope();
+
     if (isBytecode) vmWriter->elseStatementBlock(&patchState);
     else ast->endBlock();
-
-    endScope();
 
     if (match(TokenType::Else)) {
         consume(TokenType::LeftBrace, "Expect '{' after if.");
