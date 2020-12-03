@@ -733,49 +733,48 @@ void Parser::expressionStatement() {
 
 void Parser::ifStatement() {
     expression();
-    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
+    
     typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after if.");
 
-    int thenJump = emitJump(OpCode::JumpIfFalse);
-    emitByte(OpCode::Pop);
-    emitByte(conditionSlots);
+    IfStatement *ifStmtAst;
+    IfStatementPatchState patchState;
+
+    
     beginScope();
-    auto ifStmtAst = ast->beginIfStatementBlock();
+    patchState = vmWriter->beginIfStatementBlock();
+    ifStmtAst = ast->beginIfStatementBlock();
     block();
     ast->endBlock();
     endScope();
 
-    int elseJump = emitJump(OpCode::Jump);
-
-    patchJump(thenJump);
-    emitByte(OpCode::Pop);
-    emitByte(conditionSlots);
+    vmWriter->elseStatementBlock(&patchState);
 
     if (match(TokenType::Else)) {
         consume(TokenType::LeftBrace, "Expect '{' after if.");
 
         beginScope();
+
         ast->beginElseBlock(ifStmtAst);
         block();
         ast->endBlock();
         endScope();
     }
-    patchJump(elseJump);
+
+    vmWriter->endIfStatementBlock(&patchState);
+    
     consumeEndStatement("Expect ';' or newline after block.");
 }
 
 void Parser::whileStatement() {
-    int loopStart = currentChunk().code.size();
     expression();
-    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
+    
     typecheckIfCondition(this);
     consume(TokenType::LeftBrace, "Expect '{' after condition.");
 
-    int exitJump = emitJump(OpCode::JumpIfFalse);
-
-    emitByte(OpCode::Pop);
-    emitByte(conditionSlots);
+    WhileStatementPatchState patchState;
+    
+    patchState = vmWriter->beginWhileStatementBlock();
 
     beginScope();
     ast->beginWhileStatementBlock();
@@ -783,11 +782,8 @@ void Parser::whileStatement() {
     ast->endBlock();
     endScope();
 
-    emitLoop(loopStart);
+    vmWriter->endWhileStatementBlock(&patchState);
 
-    patchJump(exitJump);
-    emitByte(OpCode::Pop);
-    emitByte(conditionSlots);
     consumeEndStatement("Expect ';' or newline after block.");
 }
 
@@ -821,7 +817,7 @@ void Parser::varDeclaration() {
         }
     } else {
         Type valueType = typecheckVarDeclaration(this, type, false);
-        emitByte(OpCode::Nil);
+        vmWriter->varDeclarationNoValue();
         // typecheckNil(this, type);
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
@@ -967,12 +963,10 @@ void Parser::structDeclaration() {
 
 
 void Parser::number(ExpressionState es) {
-    // https://stackoverflow.com/questions/11752705/does-stdstring-contain-null-terminator
-    // Don't want to risk it - just convert to a new string instead
-    double value = strtod(std::string(previous().text).c_str(), nullptr);
-    emitDoubleConstant(value);
+    
     typecheckNumber(this);
     ast->number(previous());
+    vmWriter->number(previous());
 }
 
 void Parser::grouping(ExpressionState es) {
@@ -1008,59 +1002,20 @@ void Parser::unary(ExpressionState es) {
     
     expression();
 
-    switch (operatorType) {
-        case TokenType::Bang:  emitByte(OpCode::Not); break;
-        case TokenType::Minus: emitByte(OpCode::Negate); break;
-        default:
-            return;
-    }
+    vmWriter->unary(operatorType);
 }
 
 void Parser::binary(ExpressionState es) {
     TokenType operatorType = previous().type;
     Token binaryToken = previous();
 
-    bool concatenation = false;
-    if (operatorType == TokenType::Plus) {
-        Type type = compiler->expressionTypeStack.back();
-        bool isNumber = type == types::Number || type == types::Bool;
-        if (!isNumber) {
-            concatenation = true;
-        }
-    }
-    
     ParseRule &rule = getRule(operatorType);
     int prec = static_cast<int>(rule.precedence);
     parsePrecedence(Precedence(prec + 1)); // +1 because of left associativity
 
-    Type type = compiler->expressionTypeStack.back();
-    bool isNumber = type == types::Number || type == types::Bool;
-
     typecheckBinary(this, operatorType);
 
-    switch (operatorType) {
-        case TokenType::BangEqual:     emitByte(isNumber ? OpCode::EqualDouble : OpCode::Equal); emitByte(OpCode::Not); break;
-        case TokenType::EqualEqual:    emitByte(isNumber ? OpCode::EqualDouble : OpCode::Equal); break;
-        case TokenType::Greater:       emitByte(OpCode::Greater); break;
-        case TokenType::GreaterEqual:  emitByte(OpCode::Less); emitByte(OpCode::Not); break;
-        case TokenType::Less:          emitByte(OpCode::Less); break;
-        case TokenType::LessEqual:     emitByte(OpCode::Greater); emitByte(OpCode::Not); break;
-        case TokenType::Minus:         emitByte(OpCode::Subtract); break;
-        case TokenType::Star:          emitByte(OpCode::Multiply); break;
-        case TokenType::Slash:         emitByte(OpCode::Divide); break;
-        case TokenType::Plus: {
-            if (concatenation) {
-                if (isNumber) {
-                    emitByte(OpCode::ToStringDouble);
-                }
-                emitByte(OpCode::Add);
-            } else {
-                emitByte(OpCode::AddDouble);
-            }
-            break;
-        }
-        default: break;
-    }
+    vmWriter->infix(operatorType);
 
     ast->infix(binaryToken);
 
@@ -1070,15 +1025,15 @@ void Parser::literal(ExpressionState es) {
     typecheckLiteral(this);
     switch (previous().type) {
         case TokenType::False: 
-            emitByte(OpCode::False);
+            vmWriter->booleanLiteral(false);
             ast->booleanLiteral(false);
             break;
         case TokenType::True: 
-            emitByte(OpCode::True);
+            vmWriter->booleanLiteral(true);
             ast->booleanLiteral(true);
             break;
         case TokenType::Nil: 
-            emitByte(OpCode::Nil);
+            vmWriter->nilLiteral();
             ast->booleanLiteral(false);
             break;
         default: return;
@@ -1087,28 +1042,18 @@ void Parser::literal(ExpressionState es) {
 
 void Parser::string(ExpressionState es) {
     typecheckString(this);
-
-    auto str = previous().text;
-    str.remove_prefix(1);
-    str.remove_suffix(1);
-    // TODO: Garbage collection
-    auto objStr = new ObjString(std::string(str));
-    emitConstant(objStr);
-
+    
+    vmWriter->string(previous());
     ast->string(previous());
 }
 
 void Parser::and_(ExpressionState es) {
     Token andToken = previous();
-    int endJump = emitJump(OpCode::JumpIfFalse);
 
-    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
-    emitByte(OpCode::Pop);
-    emitByte(conditionSlots);
-
+    WhileStatementPatchState patchState = vmWriter->beginAndExpression();
     parsePrecedence(Precedence::And);
 
-    patchJump(endJump);
+    vmWriter->endAndCondition(&patchState);
     typecheckAnd(this);
 
     ast->infix(andToken);
@@ -1116,16 +1061,12 @@ void Parser::and_(ExpressionState es) {
 
 void Parser::or_(ExpressionState es) {
     Token orToken = previous();
-    int elseJump = emitJump(OpCode::JumpIfFalse);
-    int endJump = emitJump(OpCode::Jump);
-
-    patchJump(elseJump);
-    int conditionSlots = slotSizeOfType(compiler->expressionTypeStack.back());
-    emitByte(OpCode::Pop);
-    emitByte(conditionSlots);
+    
+    IfStatementPatchState patchState;
+    patchState = vmWriter->beginOrExpression();
 
     parsePrecedence(Precedence::Or);
-    patchJump(endJump);
+    vmWriter->endOrCondition(&patchState);
     typecheckOr(this);
 
     ast->infix(orToken);
@@ -1188,10 +1129,6 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     typecheckBeginFunctionCall(this, nullptr);
 
-    // emitByte(OpCode::Constant);
-    // emitByte(0xFF);
-    // emitByte(0xFF);
-    size_t patchIndex = currentChunk().code.size() - 1;
     uint8_t argCount = argumentList(functionDeclaration);
 
     auto inst = getInstantiationFromStack(functionDeclaration, argCount);
@@ -1200,17 +1137,11 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         typecheckInstantiationAgainstStack(this, inst, argCount);
         compileFunctionInstantiation(*inst);
     }
-
-    uint16_t constant = makeConstant(inst->function);
-    assert(constant < 256);
-    // currentChunk().code[patchIndex] = (constant >> 8) & 0xff;
-    // currentChunk().code[patchIndex] = constant & 0xff;
     
     typecheckEndFunctionCall(this, inst->function, argCount);
-    emitByte(OpCode::Call);
-    emitByte(constant);
-
+    
     ast->functionCall(*inst, argCount);
+    vmWriter->functionCall(*inst, argCount);
 }
 
 void Parser::variable(ExpressionState es) {
@@ -1240,18 +1171,6 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
             error("Can't read local variable in its own initializer.");
         }
         if (arg != -1) {
-            OpCode getOp = OpCode::GetLocal;
-            OpCode setOp = OpCode::SetLocal;
-
-            Type type = compiler->locals[arg].type;
-            if (type == types::Number || type == types::Bool) {
-                getOp = OpCode::GetLocalDouble;
-                setOp = OpCode::SetLocalDouble;
-            }
-
-            size_t stackOffset = compiler->locals[arg].stackOffset;
-            assert(stackOffset < 256);
-
             typecheckVariable(this, arg);
             ast->variable(nameToken);
 
@@ -1260,9 +1179,9 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
                 typecheckAssignExpression(this);
                 ast->assignment();
 
-                emitByte(setOp); emitByte((uint8_t)stackOffset);
+                vmWriter->namedVariable(arg, true);
             } else {
-                emitByte(getOp); emitByte((uint8_t)stackOffset);
+                vmWriter->namedVariable(arg, false);
             }
         } else {
             error("No variable found.");
