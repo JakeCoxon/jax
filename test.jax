@@ -62,6 +62,9 @@ print(me.age + 10)
 var fullname = string_concat(string_concat(me.firstname, " "), me.lastname)
 print(fullname)
 
+// var @static blk = block {
+
+// }
 
 struct array {
   elem_size: number

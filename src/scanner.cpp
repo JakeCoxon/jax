@@ -20,7 +20,7 @@ enum class TokenType {
     And, Struct, Else, False,
     For, Fun, If, Nil, Or,
     Print, Return, Super, This,
-    True, Var, While,
+    True, Var, While, Block,
 
     Newline,
     Error,
@@ -189,6 +189,7 @@ TokenType Scanner::checkKeyword(size_t offset, const std::string &rest, TokenTyp
 TokenType Scanner::identifierType() {
     switch (source[start]) {
         case 'a': return checkKeyword(1, "nd", TokenType::And);
+        case 'b': return checkKeyword(1, "lock", TokenType::Block);
         case 'e': return checkKeyword(1, "lse", TokenType::Else);
         case 'f': 
             if (current - start > 1) {

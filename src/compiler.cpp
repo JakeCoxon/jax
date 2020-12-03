@@ -27,6 +27,7 @@ struct Local {
     Type type = types::Void;
     int depth;
     int stackOffset = -1;
+    bool isStatic = false;
 
     Local(const std::string_view &name, int depth, int stackOffset):
         name(name), depth(depth), stackOffset(stackOffset) {};
@@ -65,6 +66,8 @@ struct FunctionDeclaration {
 };
 
 struct Parser;
+struct VmWriter;
+struct AstGen;
 
 struct Compiler {
     ObjFunction *function;
@@ -92,7 +95,6 @@ struct ExpressionState {
     bool canAssign;
 };
 
-struct AstGen;
 
 struct Parser {
     Scanner *scanner;
@@ -102,12 +104,13 @@ struct Parser {
     std::map<std::string, Type> typesByName;
 
     AstGen *ast;
+    VmWriter *vmWriter;
 
     bool hadError = false;
     bool panicMode = false;
 
-    Parser(Scanner *scanner, Compiler *compiler, AstGen *ast):
-            scanner(scanner), compiler(compiler), ast(ast) {
+    Parser(Scanner *scanner, Compiler *compiler, AstGen *ast, VmWriter *vmWriter):
+            scanner(scanner), compiler(compiler), ast(ast), vmWriter(vmWriter) {
         initCompiler(compiler);
     };
 
@@ -133,12 +136,11 @@ struct Parser {
     void beginScope();
     void endScope();
 
-    void emitReturn();
-    void emitConstant(Value value);
-    void emitDoubleConstant(double value);
-    int emitJump(OpCode instruction);
-    void patchJump(int offset);
-    void emitLoop(int loopStart);
+
+    Chunk &currentChunk() { 
+        return compiler->function->chunk;
+    }
+
 
     void declaration();
     void statement();
@@ -165,22 +167,10 @@ struct Parser {
     void and_(ExpressionState es);
     void or_(ExpressionState es);
     void dot(ExpressionState es);
+    void lambda(ExpressionState es);
     uint8_t argumentList(FunctionDeclaration *functionDeclaration);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
-    Chunk &currentChunk() { 
-        return compiler->function->chunk;
-    }
-    void emitByte(uint8_t byte) {
-        currentChunk().write(byte, previous().line);
-    }
-    void emitByte(OpCode opcode) {
-        emitByte(static_cast<uint8_t>(opcode));
-    }
-    void emitTwoBytes(uint16_t bytes) {
-        currentChunk().write((bytes << 8) & 0xff, previous().line);
-        currentChunk().write(bytes & 0xff, previous().line);
-    }
 
     void errorAtCurrent(const std::string &message) {
         errorAt(scanner->currentToken, message);
@@ -192,6 +182,7 @@ struct Parser {
 
 #include "typecheck.cpp"
 #include "ast.cpp"
+#include "vmwriter.cpp"
 
 using ParseFn = void (Parser::*)(ExpressionState);
 
@@ -233,8 +224,10 @@ ObjFunction *compile(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     AstGen ast;
+    VmWriter vmWriter;
     Compiler compiler(function, CompilerType::Script, nullptr);
-    Parser parser { &scanner, &compiler, &ast };
+    Parser parser { &scanner, &compiler, &ast, &vmWriter };
+    vmWriter.parser = &parser;
     ast.parser = &parser;
     typecheckInit(&parser);
 
@@ -261,8 +254,10 @@ std::string compileToString(const std::string &source) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     AstGen ast;
+    VmWriter vmWriter;
     Compiler compiler(function, CompilerType::Script, nullptr);
-    Parser parser { &scanner, &compiler, &ast };
+    Parser parser { &scanner, &compiler, &ast, &vmWriter };
+    vmWriter.parser = &parser;
     ast.parser = &parser;
     typecheckInit(&parser);
 
@@ -283,6 +278,8 @@ std::string compileToString(const std::string &source) {
     return text;
     
 }
+
+
 
 int Compiler::resolveLocal(const std::string_view &name) {
     for (int i = locals.size() - 1; i >= 0; i--) {
@@ -470,7 +467,7 @@ ObjFunction *Parser::endCompiler() {
         }
     }
     
-    emitReturn();
+    vmWriter->endCompiler();
 
     ObjFunction *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
@@ -592,72 +589,17 @@ void Parser::beginScope() {
 
 void Parser::endScope() {
     compiler->scopeDepth --;
-    int numSlots = 0;
+
+    vmWriter->endScope();
+    
     while (compiler->locals.size() > 0 &&
             compiler->locals.back().depth >
             compiler->scopeDepth) {
-        numSlots += slotSizeOfType(compiler->locals.back().type);
         compiler->locals.pop_back();
     }
-    emitByte(OpCode::Pop);
-    emitByte(numSlots);
+    
 }
 
-void Parser::emitReturn() {
-    emitByte(OpCode::Nil);
-    emitByte(OpCode::Return);
-}
-
-void Parser::emitConstant(Value value) {
-    uint16_t constantIndex = makeConstant(value);
-
-    if (constantIndex < 256) {
-        emitByte(OpCode::Constant); emitByte(constantIndex);
-    } else {
-        assert(false); // Not implemented yet. Use a wide opcode
-    }
-    // emitByte(OpCode::Constant); emitTwoBytes(constantIndex);
-}
-void Parser::emitDoubleConstant(double value) {
-    uint16_t constantIndex = currentChunk().addDoubleConstant(value);
-
-    if (constantIndex < 256) {
-        emitByte(OpCode::ConstantDouble); emitByte(constantIndex);
-    } else {
-        assert(false); // Not implemented yet. Use a wide opcode
-    }
-    // emitByte(OpCode::Constant); emitTwoBytes(constantIndex);
-}
-
-
-int Parser::emitJump(OpCode instruction) {
-    emitByte(instruction);
-    emitByte(0xff);
-    emitByte(0xff);
-    return currentChunk().code.size() - 2;
-}
-
-void Parser::patchJump(int offset) {
-    int jump = currentChunk().code.size() - offset - 2;
-
-    if (jump > UINT16_MAX) {
-        error("Too much code to jump over.");
-        return;
-    }
-
-    currentChunk().code[offset] = (jump >> 8) & 0xff;
-    currentChunk().code[offset + 1] = jump & 0xff;
-}
-
-void Parser::emitLoop(int loopStart) {
-    emitByte(OpCode::Loop);
-
-    int offset = currentChunk().code.size() - loopStart + 2;
-    if (offset > UINT16_MAX) error("Loop body too large.");
-
-    emitByte((offset >> 8) & 0xff);
-    emitByte(offset & 0xff);
-}
 
 void Parser::parsePrecedence(Precedence precedence) {
     advance();
@@ -752,16 +694,13 @@ void Parser::printStatement() {
     
     Type argType = compiler->expressionTypeStack.back();
 
-    if (argCount == 1 && (argType == types::Number || argType == types::Bool)) {
-        emitByte(OpCode::ToStringDouble);
-    }
+    // if (argCount == 1 && (argType == types::Number || argType == types::Bool)) {
+    //     emitByte(OpCode::ToStringDouble);
+    // }
 
     typecheckPrintEnd(this, &printState, argCount);
 
-    
-    emitByte(OpCode::Print);
-    emitByte(argCount);
-
+    vmWriter->print();
     ast->print();
 }
 
@@ -770,14 +709,14 @@ void Parser::returnStatement() {
         error("Can't return from top-level code.");
     }
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
-        emitReturn();
         typecheckReturnNil(this, compiler->function);
+        vmWriter->returnStatement(true);
         ast->returnStatement(true);
     } else {
         expression();
         consumeEndStatement("Expect ';' or newline after return value");
-        emitByte(OpCode::Return);
         typecheckReturn(this, compiler->function);
+        vmWriter->returnStatement(false);
         ast->returnStatement(false);
     }
 
@@ -786,10 +725,9 @@ void Parser::returnStatement() {
 void Parser::expressionStatement() {
     expression();
     consumeEndStatement("Expect ';' or newline after expression.");
-    emitByte(OpCode::Pop);
-    emitByte(slotSizeOfType(compiler->expressionTypeStack.back()));
     typecheckEndStatement(this);
 
+    vmWriter->exprStatement();
     ast->exprStatement();
 }
 
@@ -854,7 +792,16 @@ void Parser::whileStatement() {
 }
 
 void Parser::varDeclaration() {
+    bool isStatic = false;
+    if (match(TokenType::At)) {
+        consume(TokenType::Identifier, "Expect identifier after '@'.");
+        if (previous().text == "static") {
+            isStatic = true;
+        }
+    }
     parseVariable("Expect variable name.");
+    compiler->locals.back().isStatic = isStatic;
+
     Token nameToken = previous();
 
     Type type = types::Void;
@@ -880,7 +827,9 @@ void Parser::varDeclaration() {
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     compiler->markInitialized();
 
-    ast->varDeclaration(nameToken, type, initializer);
+    if (!isStatic) {
+        ast->varDeclaration(nameToken, type, initializer);
+    }
 }
 
 void Parser::expression() {
@@ -1200,6 +1149,24 @@ void Parser::dot(ExpressionState es) {
     }
 }
 
+void Parser::lambda(ExpressionState es) {
+    // consume(TokenType::LeftBrace, "Expect property name after '.'.");
+    // Token property = previous();
+    // // uint8_t name = identifierConstant(previous().text);
+
+    // typecheckPropertyAccess(this, property.text);
+    // ast->property(property);
+  
+    // if (es.canAssign && match(TokenType::Equal)) {
+    //     expression();
+    //     typecheckAssignExpression(this);
+    //     ast->assignment();
+    //     // emitBytes(OP_SET_PROPERTY, name); // TODO:
+    // } else {
+    //     // emitBytes(OP_GET_PROPERTY, name);
+    // }
+}
+
 uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
     uint8_t argCount = 0;
     if (!check(TokenType::RightParen)) {
@@ -1346,6 +1313,7 @@ ParseRule rules[] = {
     {&Parser::literal,  nullptr,           Precedence::None},       // True
     {nullptr,           nullptr,           Precedence::None},       // Var
     {nullptr,           nullptr,           Precedence::None},       // While
+    {&Parser::lambda,   nullptr,           Precedence::None},       // Block
     {nullptr,           nullptr,           Precedence::None},       // Newline
     {nullptr,           nullptr,           Precedence::None},       // Error
     {nullptr,           nullptr,           Precedence::None},       // Eof
