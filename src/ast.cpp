@@ -2,69 +2,49 @@
 
 using std::endl;
 
-enum class ExprKind {
-    FunctionCall, Infix, String, Number, Boolean, Assignment, Var, Property, Array
-};
-enum class DeclKind {
-    Fun, Var, Stmt
-};
-enum class StmtKind {
-    Print, If, While, Return, Block, Expr
-};
-
 struct Expr;
 struct Declaration;
 
 struct FunctionCall {
-    // Expr expr;
     FunctionDeclaration *functionDeclaration;
     int argCount;
     std::vector<Expr*> arguments;
 };
 
 struct InfixExpr {
-    // Expr expr;
     Token operatorToken;
     Expr *left = nullptr;
     Expr *right = nullptr;
 };
 struct PropertyExpr {
-    // Expr expr;
     Expr *left = nullptr;
     Token property;
 };
 
 struct StringLiteral {
-    // Expr expr;
     Token name;
 };
 struct NumberLiteral {
-    // Expr expr;
     Token name;
 };
 struct BooleanLiteral {
-    // Expr expr;
     bool value;
 };
 
 struct AssignmentExpr {
-    // Expr expr;
     Expr *left;
     Expr *value = nullptr;
 };
 struct VariableLiteral {
-    // Expr expr;
     Token name;
 };
 struct ArrayLiteral {
-    // Expr expr;
     Type elementType;
     Expr **elements;
     int numElements;
 };
 
 struct Expr {
-    // ExprKind kind;
     Type type;
 
     mpark::variant<FunctionCall, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
@@ -85,40 +65,30 @@ struct VarDeclaration {
     Expr *value = nullptr;
 };
 
-
-
-
 struct PrintStatement {
-    // Statement stmt;
     Expr *argument = nullptr;
 };
 struct IfStatement {
-    // Statement stmt;
     Expr *expr = nullptr;
     Declaration *firstDeclaration = nullptr;
     Declaration *firstElseDeclaration = nullptr;
 };
 struct ReturnStatement {
-    // Statement stmt;
     Expr *expr = nullptr;
 };
 struct WhileStatement {
-    // Statement stmt;
     Expr *expr = nullptr;
     Declaration *firstDeclaration = nullptr;
 };
 struct Block {
-    // Statement stmt;
     Declaration *firstDeclaration = nullptr;
 };
 struct ExprStatement {
-    // Statement stmt;
     Expr *expr = nullptr;
 };
 
 struct Statement {
     mpark::variant<PrintStatement, IfStatement, ReturnStatement, WhileStatement, Block, ExprStatement> variant;
-    // StmtKind kind;
 };
 
 struct Declaration {
