@@ -102,18 +102,23 @@ struct StructTypeData {
     std::string name;
     std::vector<StructMember> members;
 };
+struct ArrayTypeData {
+    TypeData* elementType;
+};
 
 struct TypeData {
     const size_t type_id;
-    mpark::variant<PrimitiveTypeData, FunctionTypeData, StructTypeData> variant;
+    mpark::variant<PrimitiveTypeData, FunctionTypeData, StructTypeData, ArrayTypeData> variant;
 
     PrimitiveTypeData* primitiveTypeData() { return &mpark::get<PrimitiveTypeData>(variant); }
     FunctionTypeData* functionTypeData() { return &mpark::get<FunctionTypeData>(variant); }
     StructTypeData* structTypeData() { return &mpark::get<StructTypeData>(variant); }
+    ArrayTypeData* arrayTypeData() { return &mpark::get<ArrayTypeData>(variant); }
 
     bool isPrimitive() { return mpark::holds_alternative<PrimitiveTypeData>(variant); }
     bool isFunction() { return mpark::holds_alternative<FunctionTypeData>(variant); }
     bool isStruct() { return mpark::holds_alternative<StructTypeData>(variant); }
+    bool isArray() { return mpark::holds_alternative<ArrayTypeData>(variant); }
 
 };
 using Type = TypeData*;
@@ -128,6 +133,7 @@ namespace types {
     const Type Unknown  = new TypeData{5, PrimitiveTypeData{"unknown"}};
     const Type Function = new TypeData{6, PrimitiveTypeData{"function"}};
     const Type VoidPtr  = new TypeData{7, PrimitiveTypeData{"voidptr"}};
+    const Type Array    = new TypeData{8, PrimitiveTypeData{"array"}};
 }
 
 

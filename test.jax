@@ -8,7 +8,7 @@ static {
   var cool_thing = 3
   print(cool_thing)
 
-  
+  print("This is printing at compile time: $cool_thing")
 }
 
 static if 3 > 2 {
@@ -75,19 +75,20 @@ me.age = 200
 
 print(me.firstname)
 print(me.age + 10)
-var fullname = string_concat(string_concat(me.firstname, " "), me.lastname)
-print(fullname)
+var fn = me.firstname
+var ln = me.lastname
+// print("fullname is $fn $ln")
 
 
 
-struct array {
+struct array_base {
   elem_size: number
   data: voidptr
   len: number
   cap: number
 }
-fun new_array_from_literal(len: number, cap: number, elem_size: number, c_array: voidptr): array {
-  var a: array
+fun _new_array_from_literal(len: number, cap: number, elem_size: number, c_array: voidptr): array_base {
+  var a: array_base
   a.data = calloc(len, elem_size)
   a.elem_size = elem_size
   a.len = len
@@ -95,14 +96,12 @@ fun new_array_from_literal(len: number, cap: number, elem_size: number, c_array:
   memcpy(a.data, c_array, len * elem_size)
   return a
 }
-fun array_index(a: array, i: number): voidptr @extern
-fun deref_double_array(a: voidptr): number @extern
 
 var a = [10, 2.22, 33123123.0, 123123, 2.34]
 
 var i = 0
 while i < a.len {
-  print(deref_double_array(array_index(a, i)))
+  print(a[i])
   i = i + 1
 }
 
@@ -137,7 +136,8 @@ fun fib(n): number {
  return fib(n - 2) + fib(n - 1)
 }
 
-print("{}", fib(35) == 9227465)
+// var correct = fib(35) == 9227465
+// print("was correct? $correct")
 ////print("{}", fib(3))
 
 // if apple < 10 {
@@ -178,5 +178,5 @@ print("{}", fib(35) == 9227465)
 static {
   print(123)
 }
-print("time was")
-print(clock_seconds() - start)
+var time = clock_seconds() - start
+print("time was $time s")

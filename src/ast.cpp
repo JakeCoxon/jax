@@ -42,6 +42,9 @@ struct AssignmentExpr {
 struct VariableLiteral {
     Token name;
 };
+struct TypeLiteral {
+    Type type;
+};
 struct ArrayLiteral {
     Type elementType;
     Expr **elements;
@@ -52,7 +55,7 @@ struct Expr {
     Type type;
 
     mpark::variant<FunctionCall, FunctionCallNative, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
-        BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral> variant;
+        BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral, TypeLiteral> variant;
 };
 
 struct FunDeclaration {
@@ -233,6 +236,13 @@ struct AstGen {
         expressionStack.push_back(expr);
     }
 
+    void typeLiteral(Type type) {
+        auto expr = new Expr();
+        expr->type = parser->compiler->expressionTypeStack.back();
+        auto typeLit = makeVariant<TypeLiteral>(expr);
+        typeLit->type = type;
+        expressionStack.push_back(expr);
+    }
     // Declarations
 
     void exprStatement() {
@@ -365,9 +375,12 @@ struct CodeGen {
         else {
             if (type->isPrimitive()) {
                 ss << type->primitiveTypeData()->name;
-            }
-            if (type->isStruct()) {
+            } else if (type->isStruct()) {
                 ss << type->structTypeData()->name;
+            } else if (type->isArray()) {
+                ss << "array_base";
+            } else {
+                assert(0 && "Can't writer typename.");
             }
         }
     }
@@ -445,6 +458,9 @@ struct CodeGen {
             [&](VariableLiteral &ex) {
                 ss << ex.name.text;
             },
+            [&](TypeLiteral &ty) {
+                addTypeName(ty.type);
+            },
             [&](FunctionCall &call) {
                 ss << call.functionDeclaration->name;
                 ss << "(";
@@ -472,7 +488,7 @@ struct CodeGen {
                 ss << ")";
             },
             [&](ArrayLiteral &array) {
-                ss << "new_array_from_literal(";
+                ss << "_new_array_from_literal(";
                 ss << array.numElements << ", ";
                 ss << array.numElements << ", ";
                 ss << "sizeof(";
@@ -501,7 +517,7 @@ struct CodeGen {
                 else if (type == types::Bool) ss << "%s";
                 else if (type == types::VoidPtr) ss << "%p";
                 else {
-                    assert(false); // Not implemented
+                    assert(0 && "Printing not implemented for this type");
                 }
                 ss << "\\n\", ";
                 if (type == types::Bool) { 
@@ -590,8 +606,8 @@ struct CodeGen {
         ss << "double clock_seconds() { return (double)clock() / CLOCKS_PER_SEC; }" << endl;
         ss << "string alloc_string(int length) { return (string)malloc(length * sizeof(string)); }" << endl;
         ss << "string string_concat(string a, string b) { char *dst = (char*)malloc((strlen(a) + strlen(b)) * sizeof(string)); strcpy(dst, a); strcat(dst, b); return dst; }" << endl;
-        ss << "#define array_index(a, i) (a.data + (int)i * (int)a.elem_size)" << endl;
-        ss << "#define deref_double_array(a) (*(double*)a)" << endl;
+        ss << "#define _array_index(a, i, type) *(type*)(a.data + (int)i * (int)a.elem_size)" << endl;
+        ss << "#define _bool_to_string(b) ((b) ? \"true\" : \"false\")" << endl;
 
         // TODO: Make this better
         ss << "const char *make_string(const char *format, ...) {";

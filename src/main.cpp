@@ -1,4 +1,4 @@
-
+#include <time.h>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -37,9 +37,17 @@ std::string readFile(const std::string &path) {
 //     if (result == InterpretResult::RuntimeError) exit(70);
 // }
 
+double clock_seconds() { return (double)clock() / CLOCKS_PER_SEC; }
+
 static void runFile(const std::string &path) {
+    
+    double startTime = clock_seconds();
+
     std::string source = readFile(path);
+    
+    double startTimeCompile = clock_seconds();
     std::string output = compileToString(source);
+    double compileTime = clock_seconds() - startTimeCompile;
 
     if (output.size()) {
         std::cout << output << std::endl;
@@ -49,8 +57,11 @@ static void runFile(const std::string &path) {
         myfile << output;
         myfile.close();
 
+        double compileTimeFile = clock_seconds() - startTime;
+
         system("clang output.c -o output");
         system("./output");
+        printf("Compile time: %fs (%fs of which file op)\n", compileTime, compileTimeFile - compileTime);
     }
 }
 

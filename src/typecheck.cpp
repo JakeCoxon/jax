@@ -23,6 +23,7 @@ Type addNewType(Parser *parser, T typeData) {
     parser->types.push_back(type);
     return type;
 }
+
 template<typename T>
 Type addNamedType(Parser *parser, const std::string &name, T typeData) {
     auto type = addNewType(parser, typeData);
@@ -31,22 +32,24 @@ Type addNamedType(Parser *parser, const std::string &name, T typeData) {
 }
 
 void typecheckInit(Parser *parser) {
-    parser->types.push_back(types::Void); // Void
+    parser->types.push_back(types::Void);
     parser->typesByName["void"] = parser->types.back();
-    parser->types.push_back(types::Number); // Number
+    parser->types.push_back(types::Number);
     parser->typesByName["number"] = parser->types.back();
-    parser->types.push_back(types::Bool); // Bool
+    parser->types.push_back(types::Bool);
     parser->typesByName["bool"] = parser->types.back();
-    parser->types.push_back(types::String); // String
+    parser->types.push_back(types::String);
     parser->typesByName["string"] = parser->types.back();
-    parser->types.push_back(types::Dynamic); // Dynamic
+    parser->types.push_back(types::Dynamic);
     parser->typesByName["dynamic"] = parser->types.back();
-    parser->types.push_back(types::Unknown); // Unknown
+    parser->types.push_back(types::Unknown);
     parser->typesByName["unknown"] = parser->types.back();
-    parser->types.push_back(types::Function); // Function placeholder
+    parser->types.push_back(types::Function);
     
-    parser->types.push_back(types::VoidPtr); // voidptr
+    parser->types.push_back(types::VoidPtr);
     parser->typesByName["voidptr"] = parser->types.back();
+    parser->types.push_back(types::Array);
+    parser->typesByName["array"] = parser->types.back();
 }
 
 void typecheckPop(Parser *parser) {
@@ -113,6 +116,10 @@ void typecheckPropertyAccess(Parser *parser, const std::string_view& propertyNam
     Type mainType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
 
+    if (mainType->isArray() && propertyName == "len") {
+        parser->compiler->expressionTypeStack.push_back(types::Number);
+        return;
+    }
     if (!mainType->isStruct()) {
         parser->error("Cannot access a non-struct object.");
         return;
@@ -145,6 +152,25 @@ void typecheckAssignExpression(Parser *parser) {
 
 void typecheckNumber(Parser *parser) {
     parser->compiler->expressionTypeStack.push_back(types::Number);
+}
+
+void typecheckArrayAccess(Parser *parser) {
+    Type indexType = parser->compiler->expressionTypeStack.back();
+    if (!typecheckIsAssignable(parser, indexType, types::Number)) {
+        parser->error("Can only index with a number.");
+        return;
+    }
+    parser->compiler->expressionTypeStack.pop_back();
+
+    Type arrayType = parser->compiler->expressionTypeStack.back();
+    if (!arrayType->isArray()) {
+        parser->error("Can only index an array.");
+        return;
+    }
+
+    parser->compiler->expressionTypeStack.pop_back();
+
+    parser->compiler->expressionTypeStack.push_back(arrayType->arrayTypeData()->elementType);
 }
 
 void typecheckBinary(Parser *parser, TokenType operatorType) {

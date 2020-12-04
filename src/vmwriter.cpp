@@ -61,7 +61,11 @@ struct VmWriter {
     }
 
     void print() {
-        emitByte(OpCode::PrintDouble);
+        Type argType = parser->compiler->expressionTypeStack.back();
+        if (argType == types::Number || argType == types::Bool) {
+            emitByte(OpCode::ToStringDouble);
+        }
+        emitByte(OpCode::Print);
         emitByte(1); // 1 only for now
     }
     void returnStatement(bool isNil) {

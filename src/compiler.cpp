@@ -139,9 +139,7 @@ struct Parser {
     void endScope();
 
 
-    Chunk &currentChunk() { 
-        return compiler->function->chunk;
-    }
+    Chunk &currentChunk();
 
 
     void declaration();
@@ -161,6 +159,7 @@ struct Parser {
     void number(ExpressionState es);
     void grouping(ExpressionState es);
     void arraylit(ExpressionState es);
+    void arrayget(ExpressionState es);
     void unary(ExpressionState es);
     void binary(ExpressionState es);
     void literal(ExpressionState es);
@@ -290,7 +289,6 @@ std::string compileToString(const std::string &source) {
 }
 
 
-
 int Compiler::resolveLocal(const std::string_view &name) {
     for (int i = locals.size() - 1; i >= 0; i--) {
         Local* local = &locals[i];
@@ -334,6 +332,10 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
 
 void Compiler::markInitialized() {
     locals.back().depth = scopeDepth;
+}
+
+Chunk &Parser::currentChunk() { 
+    return vmWriter->function->chunk;
 }
 
 Token Parser::current() {
@@ -718,16 +720,10 @@ void Parser::printStatement() {
     consume(TokenType::RightParen, "Expect ')' after arguments.");
     consumeEndStatement("Expect ';' or newline after value.");
     
-    Type argType = compiler->expressionTypeStack.back();
-
-    // if (argCount == 1 && (argType == types::Number || argType == types::Bool)) {
-    //     emitByte(OpCode::ToStringDouble);
-    // }
-
-    typecheckPrintEnd(this, &printState, argCount);
-
     if (isBytecode) vmWriter->print();
     else ast->print();
+
+    typecheckPrintEnd(this, &printState, argCount);
 }
 
 void Parser::returnStatement() {
@@ -824,10 +820,6 @@ void Parser::varDeclaration() {
     // }
     parseVariable("Expect variable name.");
     compiler->locals.back().isStatic = isBytecode;
-
-    if (isBytecode) {
-        printf("Here\n");
-    }
 
     Token nameToken = previous();
 
@@ -1025,10 +1017,26 @@ void Parser::arraylit(ExpressionState es) {
         consume(TokenType::Comma, "Expect ',' or ']' after array element list.");
     }
 
-    Type returnType = typesByName["array"];
-    compiler->expressionTypeStack.push_back(returnType);
+    // Type returnType = typesByName["array"];
+    Type arrayType = addNewType(this, ArrayTypeData { elementType });
+    compiler->expressionTypeStack.push_back(arrayType);
     
     if (!isBytecode) ast->arrayLiteral(numElements, elementType);
+}
+
+void Parser::arrayget(ExpressionState es) {
+    expression();
+    consume(TokenType::RightSquare, "Expect ']' after expression.");
+
+    typecheckArrayAccess(this);
+
+    if (!isBytecode) {
+        Type elementType = compiler->expressionTypeStack.back();
+        compiler->expressionTypeStack.push_back(types::Void); // Fake this for the AST
+        ast->typeLiteral(elementType);
+        compiler->expressionTypeStack.pop_back();
+        ast->functionCallNative("_array_index", 3);
+    }
 }
 
 void Parser::unary(ExpressionState es) {
@@ -1130,13 +1138,16 @@ void Parser::stringAdvanced(bool parseFlags) {
 
     text += "\"";
 
-    std::vector<Token> idens;
+    std::vector<std::tuple<Token, Type>> idens;
 
     typecheckString(this);
+
+    int line = 0;
 
     // TODO: use a string builder?
     for (size_t i = 0; i < originalText.size(); i++) {
         if (originalText[i] == '\n') {
+            line ++;
             text += '\\';
             text += 'n';
             if (indent > 0) {
@@ -1153,13 +1164,24 @@ void Parser::stringAdvanced(bool parseFlags) {
                 i++;
             }
 
+
+
             Token iden;
             iden.type == TokenType::Identifier;
+            iden.start = original.start + start + 1; // Skip the "
+            iden.line = original.line + line;
             iden.text = std::string_view(&originalText[start], i - start);
-            idens.push_back(iden);
+            i--; // Because for loop will increment
 
             int local = compiler->resolveLocal(iden.text);
+            if (local == -1) {
+                errorAt(iden, "Couldn't find variable.");
+                continue;
+            }
             Type localType = compiler->locals[local].type;
+
+            idens.push_back({iden, localType});
+
 
             if (localType == types::Number) text += "%f";
             else if (localType == types::String) text += "%s";
@@ -1167,11 +1189,8 @@ void Parser::stringAdvanced(bool parseFlags) {
             else if (localType == types::VoidPtr) text += "%p";
             else {
                 error("Cannot format this type.");
-                return;
+                continue;
             }
-
-            i--; // Because for loop will increment
-
             
         } else {
             text += originalText[i];
@@ -1186,8 +1205,11 @@ void Parser::stringAdvanced(bool parseFlags) {
     } else {
         ast->string(string);
         if (idens.size() > 0) {
-            for (Token iden : idens) {
+            for (auto [iden, type] : idens) {
                 ast->variable(iden);
+                if (type == types::Bool) {
+                    ast->functionCallNative("_bool_to_string", 1);
+                }
             }
             ast->functionCallNative("make_string", idens.size() + 1);
         }
@@ -1356,8 +1378,8 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // RightParen
     {nullptr,           nullptr,           Precedence::None},       // LeftBrace
     {nullptr,           nullptr,           Precedence::None},       // RightBrace
-    {&Parser::arraylit, nullptr,           Precedence::None},       // LeftBrace
-    {nullptr,           nullptr,           Precedence::None},       // RightBrace
+    {&Parser::arraylit, &Parser::arrayget, Precedence::Call},       // LeftSquare
+    {nullptr,           nullptr,           Precedence::None},       // RightSquare
     {nullptr,           nullptr,           Precedence::None},       // Comma
     {nullptr,           &Parser::dot,      Precedence::Call},       // Dot
     {&Parser::unary,    &Parser::binary,   Precedence::Term},       // Minus
