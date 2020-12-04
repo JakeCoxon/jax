@@ -44,7 +44,7 @@ struct FunctionDeclaration;
 
 struct FunctionInstantiation {
     Type type;
-    ObjFunction *function = nullptr;
+    Value function;
     Compiler *compiler = nullptr;
     FunctionDeclaration *declaration = nullptr;
 };
@@ -203,25 +203,41 @@ void registry(Parser *parser);
 void registerNative(
         Parser *parser, std::string name, Type returnType,
         std::vector<FunctionParameter> parameters, NativeFn nativeFn) {
-    FunctionTypeData type{};
+    FunctionTypeData typeData {};
     for (size_t i = 0; i < parameters.size(); i++) {
-        type.parameterTypes.push_back(parameters[i].type);
+        typeData.parameterTypes.push_back(parameters[i].type);
     }
-    type.returnType = returnType;
+    typeData.returnType = returnType;
+    Type type = addNewType(parser, typeData);
     // parser->types.push_back(type);
     // int typeId = parser->types.size() - 1;
 
     // TODO: garbage collection
-    // auto native = new ObjNative{typeId, nativeFn};
+    auto native = new ObjNative{type, nativeFn};
     // TODO: garbage collection
-    // auto functionName = new ObjString{name};
-    // FunctionInstantiation inst = {typeId, native};
+    auto functionName = new ObjString{name};
+    FunctionInstantiation inst = {type, native};
     // TODO: This is broken for some reason
+    auto constant = parser->makeConstant(native);
+
+    auto decl = new FunctionDeclaration;
+    inst.declaration = decl;
+
+    decl->name = functionName->text;
+    decl->parameters = parameters;
+    decl->returnType = returnType;
+    decl->polymorphic = false;
+    decl->enclosingCompiler = nullptr;
+    decl->isExtern = true;
+    decl->constant = constant;
+    decl->overloads = {inst};
+    // decl->blockStart = scanner->start;
+    // decl->blockLine = scanner->line;
+
     // FunctionDeclaration *decl = new FunctionDeclaration {
     //     functionName->text, parameters, returnType, false, nullptr, {inst}, 0, 0, 0
     // };
-    // inst.declaration = decl;
-    // parser->compiler->functionDeclarations.push_back(decl);
+    parser->compiler->functionDeclarations.push_back(decl);
 }
 
 ObjFunction *compile(const std::string &source) {
@@ -540,7 +556,7 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
     FunctionDeclaration *functionDeclaration = functionInst.declaration;
-    ObjFunction* newFunction = functionInst.function;
+    ObjFunction* newFunction = &functionInst.function.asFunction();
     Type functionType = functionInst.type;
     auto functionTypeObj = functionType->functionTypeData();
     Compiler *compiler = functionInst.compiler;
@@ -1211,7 +1227,7 @@ void Parser::stringAdvanced(bool parseFlags) {
                     ast->functionCallNative("_bool_to_string", 1);
                 }
             }
-            ast->functionCallNative("make_string", idens.size() + 1);
+            ast->functionCallNative("_make_string", idens.size() + 1);
         }
     }
 }

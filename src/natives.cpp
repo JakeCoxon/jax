@@ -3,8 +3,8 @@
 void registry(Parser *parser) {
 
     registerNative(parser, "clock_seconds", types::Number, {}, 
-    [&](VM *vm, int argCount, Value *args) -> Value {
-        return (double)clock() / CLOCKS_PER_SEC;
+    [&](VM *vm, int argCount) -> void {
+        vm->push((double)clock() / CLOCKS_PER_SEC);
     });
 
     {

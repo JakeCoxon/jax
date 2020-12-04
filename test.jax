@@ -1,12 +1,10 @@
-fun clock_seconds(): number @extern
-fun alloc_string(length: number): string @extern
-fun string_concat(a: string, b: string): string @extern
 fun calloc(num: number, size: number): voidptr @extern
 fun memcpy(dest: voidptr, src: voidptr, size: number): voidptr @extern
 
 static {
   var cool_thing = 3
   print(cool_thing)
+  print(clock_seconds())
 
   print("This is printing at compile time: $cool_thing")
 }

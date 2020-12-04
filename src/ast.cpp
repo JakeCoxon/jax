@@ -610,7 +610,7 @@ struct CodeGen {
         ss << "#define _bool_to_string(b) ((b) ? \"true\" : \"false\")" << endl;
 
         // TODO: Make this better
-        ss << "const char *make_string(const char *format, ...) {";
+        ss << "const char *_make_string(const char *format, ...) {";
         ss << "    char *str = malloc(1024); ";
         ss << "    va_list argptr;";
         ss << "    va_start(argptr, format);";

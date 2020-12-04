@@ -61,7 +61,8 @@ static void runFile(const std::string &path) {
 
         system("clang output.c -o output");
         system("./output");
-        printf("Compile time: %fs (%fs of which file op)\n", compileTime, compileTimeFile - compileTime);
+        printf("Compile time: %fs\n", compileTime);
+        printf("  - of which: %fs file op\n", compileTimeFile - compileTime);
     }
 }
 

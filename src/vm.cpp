@@ -123,6 +123,7 @@ struct TypeData {
 };
 using Type = TypeData*;
 
+int slotSizeOfType(Type type);
 
 namespace types {
     const Type Void     = new TypeData{0, PrimitiveTypeData{"void"}};
@@ -148,7 +149,7 @@ struct ObjFunction: Obj {
     ObjFunction() {}
 };
 
-using NativeFn = std::function<Value(VM *vm, int argCount, Value *args)>;
+using NativeFn = std::function<void(VM *vm, int argCount)>;
 
 struct ObjNative: Obj {
     Type type;
@@ -486,9 +487,31 @@ bool VM::callValue(Value callee) {
             return beginCall(function, function->arity);
         },
         [&](ObjNative *native) -> bool {
-            assert(false);
-            // Value result = native->function(this, argCount, &stack[stack.size() - argCount]);
+            // assert(false);
+            auto functionTypeData = native->type->functionTypeData();
+            auto parameterTypes = functionTypeData->parameterTypes;
+            int argCount = parameterTypes.size();
+            native->function(this, argCount);
             // for (int i = 0; i < argCount; i++) { pop(); }
+            int slots = 0;
+            for (Type paramType : parameterTypes) {
+                slots += slotSizeOfType(paramType);
+            }
+            auto returnSlots = slotSizeOfType(functionTypeData->returnType);
+
+            auto stackSize = stack.size();
+            for (int i = 0; i < returnSlots; i++) {
+                // |    |    |    |    |    |    |
+                //           ^- slots- ^- return-^
+                //                               ^-- size
+                stack[stackSize - slots - returnSlots + i] = stack[stackSize - returnSlots + i];
+            }
+
+            auto slotsDiff = slots - returnSlots;
+
+            while (slots) {
+                pop<uint32_t>(); slots --;
+            }
             // pop();
             // push(result);
             return true;

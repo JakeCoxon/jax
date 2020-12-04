@@ -256,7 +256,7 @@ void typecheckVariable(Parser *parser, int local) {
 }
 
 
-void typecheckParameter(Parser *parser, ObjFunction *function, Type functionType, Type argumentType) {
+void typecheckParameter(Parser *parser, Type functionType, Type argumentType) {
     auto functionTypeObj = functionType->functionTypeData();
     functionTypeObj->parameterTypes.push_back(argumentType);
 }
@@ -285,7 +285,7 @@ void typecheckInstantiationFromArgumentList(Parser *parser, FunctionInstantiatio
 
     for (size_t i = 0; i < functionInst->declaration->parameters.size(); i++) {
         Type argumentType = functionInst->declaration->parameters[i].type;
-        typecheckParameter(parser, functionInst->function, functionInst->type, argumentType);
+        typecheckParameter(parser, functionInst->type, argumentType);
     }
 }
 
@@ -293,7 +293,7 @@ void typecheckInstantiationAgainstStack(Parser *parser, FunctionInstantiation *f
     size_t end = parser->compiler->expressionTypeStack.size();
     for (size_t i = 0; i < functionInst->declaration->parameters.size(); i++) {
         Type argumentType = parser->compiler->expressionTypeStack[end - argCount + i];
-        typecheckParameter(parser, functionInst->function, functionInst->type, argumentType);
+        typecheckParameter(parser, functionInst->type, argumentType);
     }
 }
 
