@@ -165,6 +165,8 @@ struct Parser {
     void binary(ExpressionState es);
     void literal(ExpressionState es);
     void string(ExpressionState es);
+    void stringAdvanced(bool parseFlags=true);
+    void at(ExpressionState es);
     void namedVariable(const std::string_view &name, ExpressionState es);
     void variable(ExpressionState es);
     void and_(ExpressionState es);
@@ -247,7 +249,9 @@ ObjFunction *compile(const std::string &source) {
 
     parser.endCompiler();
 
-    generateCodeC(&ast);
+    if (!parser.hadError) {
+        generateCodeC(&ast);
+    }
     
     return parser.hadError ? nullptr : function;
 
@@ -277,7 +281,10 @@ std::string compileToString(const std::string &source) {
 
     parser.endCompiler();
 
-    std::string text = generateCodeC(&ast);
+    std::string text;
+    if (!parser.hadError) {
+        text = generateCodeC(&ast);
+    }
     return text;
     
 }
@@ -973,7 +980,6 @@ void Parser::structDeclaration() {
             consume(TokenType::Colon, "Expect ':' after member name.");
             consume(TokenType::Identifier, "Expect identifier after ':'.");
             auto memberTypeName = previous().text;
-            tfm::printf("%s: %s\n", memberName, memberTypeName);
             consumeEndStatement("Expect ';' or newline after member.");
             Type memberType = typeByName(this, memberTypeName);
             StructMember m = { std::string(memberName), memberType };
@@ -1068,10 +1074,132 @@ void Parser::literal(ExpressionState es) {
 }
 
 void Parser::string(ExpressionState es) {
+    stringAdvanced(false);
+}
+
+void Parser::stringAdvanced(bool parseFlags) {
+    bool indented = false;
+    if (parseFlags) {
+        consume(TokenType::LeftParen, "Expect '(' after 'string'.");
+
+        while (true) {
+            consume(TokenType::Identifier, "Expect identifier after '('.");
+            if (previous().text == "indented") indented = true;
+
+            if (match(TokenType::Comma)) continue;
+            consume(TokenType::RightParen, "Expect ',' or ')' after identifier.");
+            break;
+
+        }
+
+        consume(TokenType::String, "Expect string literal.");
+    }
+
+    Token original = previous();
+    std::string_view originalText = previous().text;
+    originalText.remove_prefix(1);
+    originalText.remove_suffix(1);
+
+    Token string;
+    string.type = TokenType::String;
+    std::string &text = *new std::string(); // @leak
+
+    auto measureString = [](std::string_view view) {
+
+        int minIndent = 1000;
+        int currentLineIndent = 0;
+        for (size_t i = 0; i < view.size(); i++) {
+
+            if (view[i] == ' ') {
+                currentLineIndent ++;
+            } else if (view[i] != '\n' && view[i] != '\t') {
+                minIndent = currentLineIndent < minIndent ? currentLineIndent : minIndent;
+                currentLineIndent = 0;
+                while (i < view.size() && view[i] != '\n') {
+                    i ++;
+                }
+            } else if (view[i] == '\n') {
+                currentLineIndent = 0;
+            }
+
+        }
+        return minIndent == 1000 ? 0 : minIndent;
+    };
+
+    int indent = indented ? measureString(originalText) : 0;
+
+    text += "\"";
+
+    std::vector<Token> idens;
+
     typecheckString(this);
+
+    // TODO: use a string builder?
+    for (size_t i = 0; i < originalText.size(); i++) {
+        if (originalText[i] == '\n') {
+            text += '\\';
+            text += 'n';
+            if (indent > 0) {
+                for (int j = 0; j < indent && i < originalText.size(); j++, i++);
+            }
+        } else if (originalText[i] == '$') {
+            i++;
+            int start = i;
+            if (i < originalText.size() && !isAlpha(originalText[i])) {
+                error("Expected literal"); return;
+            }
+            i++;
+            while (i < originalText.size() && (isAlpha(originalText[i]) || isDigit(originalText[i]))) {
+                i++;
+            }
+
+            Token iden;
+            iden.type == TokenType::Identifier;
+            iden.text = std::string_view(&originalText[start], i - start);
+            idens.push_back(iden);
+
+            int local = compiler->resolveLocal(iden.text);
+            Type localType = compiler->locals[local].type;
+
+            if (localType == types::Number) text += "%f";
+            else if (localType == types::String) text += "%s";
+            else if (localType == types::Bool) text += "%s";
+            else if (localType == types::VoidPtr) text += "%p";
+            else {
+                error("Cannot format this type.");
+                return;
+            }
+
+            i--; // Because for loop will increment
+
+            
+        } else {
+            text += originalText[i];
+        }
+    }
+    text += "\"";
+    string.text = text;
+
     
-    if (isBytecode) vmWriter->string(previous());
-    else ast->string(previous());
+    if (isBytecode) {
+        vmWriter->string(string);
+    } else {
+        ast->string(string);
+        if (idens.size() > 0) {
+            for (Token iden : idens) {
+                ast->variable(iden);
+            }
+            ast->functionCallNative("make_string", idens.size() + 1);
+        }
+    }
+}
+
+void Parser::at(ExpressionState es) {
+    consume(TokenType::Identifier, "Expect identifier after '@'.");
+
+    if (previous().text == "string") {
+        stringAdvanced(true);
+    }
 }
 
 void Parser::and_(ExpressionState es) {
@@ -1238,7 +1366,7 @@ ParseRule rules[] = {
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Slash
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Star
     {nullptr,           nullptr,           Precedence::None},       // Colon
-    {nullptr,           nullptr,           Precedence::None},       // At
+    {&Parser::at,       nullptr,           Precedence::None},       // At
     {&Parser::unary,    nullptr,           Precedence::None},       // Bang
     {nullptr,           &Parser::binary,   Precedence::Equality},   // BangEqual
     {nullptr,           nullptr,           Precedence::None},       // Equal

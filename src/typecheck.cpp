@@ -73,6 +73,7 @@ void typecheckEndStatement(Parser *parser) {
         std::string err = "Programmer error. There was this many types on the stack: ";
         err += std::to_string(parser->compiler->expressionTypeStack.size());
         parser->error(err);
+        parser->compiler->expressionTypeStack.clear();
     }
 }
 

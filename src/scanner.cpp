@@ -239,6 +239,12 @@ Token Scanner::string() {
         if (peek() == '\n') { 
             line ++; lineStart = current + 1;
         }
+        if (peek() == '\\') {
+            advance();
+            if (peek() == '\\') advance();
+            else if (peek() == '"') advance();
+            else { errorToken("Invalid escape character."); }
+        }
         advance();
     }
 

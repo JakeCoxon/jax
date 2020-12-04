@@ -18,8 +18,14 @@ static if 3 > 2 {
 var start = clock_seconds()
 
 var apple = 5
-var thing = "monkey"
 var banana = 4 + (apple + 2) / 3 - 2
+var thing = @string(indented) "
+        \"jax\" is cool
+        apple = $apple
+        banana = $banana
+"
+
+print("apple is $apple asdasd ")
 // print(banana)
 
 // banana = banana - 1

@@ -41,15 +41,17 @@ static void runFile(const std::string &path) {
     std::string source = readFile(path);
     std::string output = compileToString(source);
 
-    std::cout << output << std::endl;
+    if (output.size()) {
+        std::cout << output << std::endl;
 
-    std::ofstream myfile;
-    myfile.open("output.c");
-    myfile << output;
-    myfile.close();
+        std::ofstream myfile;
+        myfile.open("output.c");
+        myfile << output;
+        myfile.close();
 
-    system("clang output.c -o output");
-    system("./output");
+        system("clang output.c -o output");
+        system("./output");
+    }
 }
 
 static void repl() {

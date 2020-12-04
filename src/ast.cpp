@@ -10,6 +10,10 @@ struct FunctionCall {
     int argCount;
     std::vector<Expr*> arguments;
 };
+struct FunctionCallNative {
+    std::string name;
+    std::vector<Expr*> arguments;
+};
 
 struct InfixExpr {
     Token operatorToken;
@@ -47,7 +51,7 @@ struct ArrayLiteral {
 struct Expr {
     Type type;
 
-    mpark::variant<FunctionCall, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
+    mpark::variant<FunctionCall, FunctionCallNative, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
         BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral> variant;
 };
 
@@ -197,6 +201,18 @@ struct AstGen {
         call->argCount = argCount;
         call->arguments = args;
         call->functionDeclaration = inst.declaration;
+        expressionStack.push_back(expr);
+    }
+    void functionCallNative(std::string name, int argCount) {
+        std::vector<Expr*> args;
+        for (int i = 0; i < argCount; i++) {
+            args.insert(args.begin(), 1, popExpression());
+        }
+        auto expr = new Expr();
+        expr->type = parser->compiler->expressionTypeStack.back();
+        auto call = makeVariant<FunctionCallNative>(expr);
+        call->arguments = args;
+        call->name = name;
         expressionStack.push_back(expr);
     }
 
@@ -442,6 +458,19 @@ struct CodeGen {
                 }
                 ss << ")";
             },
+            [&](FunctionCallNative &call) {
+                ss << call.name;
+                ss << "(";
+                size_t i = 0; 
+                for (Expr *arg : call.arguments) {
+                    if (i > 0) {
+                        ss << ", ";
+                    }
+                    addExpr(arg, false);
+                    i++;
+                }
+                ss << ")";
+            },
             [&](ArrayLiteral &array) {
                 ss << "new_array_from_literal(";
                 ss << array.numElements << ", ";
@@ -552,16 +581,28 @@ struct CodeGen {
         ss << "#include <stdio.h>" << endl;
         ss << "#include <stdlib.h>" << endl;
         ss << "#include <string.h>" << endl;
+        ss << "#include <stdarg.h>" << endl;
         ss << "#define true 1" << endl;
         ss << "#define false 0" << endl;
         ss << "typedef int bool;" << endl;
-        ss << "typedef char* string;" << endl;
+        ss << "typedef const char* string;" << endl;
         ss << "typedef void* voidptr;" << endl;
         ss << "double clock_seconds() { return (double)clock() / CLOCKS_PER_SEC; }" << endl;
         ss << "string alloc_string(int length) { return (string)malloc(length * sizeof(string)); }" << endl;
-        ss << "string string_concat(string a, string b) { string dst = (string)malloc((strlen(a) + strlen(b)) * sizeof(string)); strcpy(dst, a); strcat(dst, b); return dst; }" << endl;
+        ss << "string string_concat(string a, string b) { char *dst = (char*)malloc((strlen(a) + strlen(b)) * sizeof(string)); strcpy(dst, a); strcat(dst, b); return dst; }" << endl;
         ss << "#define array_index(a, i) (a.data + (int)i * (int)a.elem_size)" << endl;
         ss << "#define deref_double_array(a) (*(double*)a)" << endl;
+
+        // TODO: Make this better
+        ss << "const char *make_string(const char *format, ...) {";
+        ss << "    char *str = malloc(1024); ";
+        ss << "    va_list argptr;";
+        ss << "    va_start(argptr, format);";
+        ss << "    vsnprintf(str, 1024, format, argptr);";
+        ss << "    va_end(argptr);";
+        ss << "    str[1024 - 1] = '\\0';";
+        ss << "    return str;";
+        ss << "}" << endl;
         ss << endl;
     }
     
