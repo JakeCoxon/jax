@@ -1,5 +1,6 @@
 
 int slotSizeOfType(Type type) {
+    if (type == types::Void) return 0;
     if (type == types::Number || type == types::Void || type == types::Bool) {
         return 2;
     } else {

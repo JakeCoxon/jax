@@ -107,6 +107,7 @@ struct Parser {
     VmWriter *vmWriter;
 
     bool isBytecode = false;
+    std::string generatedCodeBuffer;
 
     bool hadError = false;
     bool panicMode = false;
@@ -693,6 +694,32 @@ void Parser::staticDeclaration() {
     vmWriter->run();
 
     isBytecode = false;
+
+    if (generatedCodeBuffer.size() > 0) {
+        Scanner *initialScanner = this->scanner;
+
+        Scanner tempScanner { generatedCodeBuffer };
+        scanner = &tempScanner;
+
+        scanner->current = 0;
+        scanner->start = 0;
+        scanner->line = 1;
+        scanner->parens = 0;
+        advance();
+        
+        // This is the same as block() but without the end brace
+        while (!check(TokenType::RightBrace) && !check(TokenType::EOF_)) {
+            while (match(TokenType::Newline)) {}
+            declaration();
+            while (match(TokenType::Newline)) {}
+        }
+
+        // Reset back
+        this->scanner = initialScanner;
+
+        // Clear this before we start parsing? If static in the string
+        generatedCodeBuffer = "";
+    }
 }
 
 void Parser::statement() {
@@ -763,10 +790,10 @@ void Parser::returnStatement() {
 void Parser::expressionStatement() {
     expression();
     consumeEndStatement("Expect ';' or newline after expression.");
-    typecheckEndStatement(this);
 
     if (isBytecode) vmWriter->exprStatement();
     else ast->exprStatement();
+    typecheckEndStatement(this);
 }
 
 void Parser::ifStatement() {
@@ -1162,7 +1189,15 @@ void Parser::stringAdvanced(bool parseFlags) {
 
     // TODO: use a string builder?
     for (size_t i = 0; i < originalText.size(); i++) {
-        if (originalText[i] == '\n') {
+        if (originalText[i] == '\\' && isBytecode /* hmmm */) {
+            i ++;
+            if (i < originalText.size()) {
+                if (originalText[i] == '\\') text += '\\';
+                else if (originalText[i] == '\"') text += '\"';
+                else if (originalText[i] == 'n') text += '\n';
+                else { error("Invalid escape character."); }
+            }
+        } else if (originalText[i] == '\n') {
             line ++;
             text += '\\';
             text += 'n';
@@ -1433,10 +1468,14 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // Var
     {nullptr,           nullptr,           Precedence::None},       // While
     {&Parser::lambda,   nullptr,           Precedence::None},       // Block
+    {nullptr,           nullptr,           Precedence::None},       // Static
     {nullptr,           nullptr,           Precedence::None},       // Newline
     {nullptr,           nullptr,           Precedence::None},       // Error
     {nullptr,           nullptr,           Precedence::None},       // Eof
 };
+
+// Make sure we haven't missed any
+static_assert(sizeof(rules) / sizeof(ParseRule) == static_cast<long>(TokenType::EOF_) + 1);
 
 static ParseRule &getRule(TokenType type) {
     return rules[static_cast<int>(type)];

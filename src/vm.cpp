@@ -509,8 +509,8 @@ bool VM::callValue(Value callee) {
 
             auto slotsDiff = slots - returnSlots;
 
-            while (slots) {
-                pop<uint32_t>(); slots --;
+            while (slotsDiff > 0) {
+                pop<uint32_t>(); slotsDiff --;
             }
             // pop();
             // push(result);
