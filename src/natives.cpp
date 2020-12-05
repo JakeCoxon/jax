@@ -13,7 +13,6 @@ void registry(Parser *parser) {
     [parser](VM *vm, int argCount) -> void {
         ObjString &str = vm->peek<Value>().asString();
         parser->generatedCodeBuffer += str.text;
-        printf("%s\n", parser->generatedCodeBuffer.c_str());
     });
 
     {

@@ -99,8 +99,14 @@ Type typecheckVarDeclaration(Parser *parser, Type type, bool initialize) {
     }
     Local &local = parser->compiler->locals.back();
     local.type = type;
-    local.stackOffset = parser->compiler->nextStackSlot;
-    parser->compiler->nextStackSlot += slotSizeOfType(type);
+    if (parser->isBytecode) {
+        // Only static bytecode variables have a slot size
+        local.stackOffset = parser->compiler->nextStackSlot;
+        // TODO: This doesn't actually work for blocks. because
+        // it never reduces? It should add from previous local
+        // I think
+        parser->compiler->nextStackSlot += slotSizeOfType(type);
+    }
     return type;
 }
 

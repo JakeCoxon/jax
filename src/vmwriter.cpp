@@ -1,4 +1,3 @@
-
 struct IfStatementPatchState {
     int conditionSlots;
     int thenJump;
@@ -115,6 +114,25 @@ struct VmWriter {
         // TODO: Garbage collection
         auto objStr = new ObjString(std::string(str));
         emitConstant(objStr);
+    }
+
+    void stringFormat(Token format, std::vector<std::tuple<Token, Type, int>> idens) {
+        if (idens.size() == 0) {
+            string(format);
+            return;
+        }
+
+        // Reverse order so we can pop in order
+        for (auto it = idens.rbegin(); it != idens.rend(); it++) {
+            auto [iden, type, local] = *it;
+            namedVariable(local, false);
+            if (type == types::Number || type == types::Bool) {
+                emitByte(OpCode::ToStringDouble);
+            }
+        }
+        string(format);
+        emitByte(OpCode::StringFormat);
+        emitByte(idens.size());
     }
 
     void infix(TokenType operatorType) {

@@ -40,6 +40,7 @@ enum class OpCode: uint8_t {
     Print,
     PrintDouble,
     ToStringDouble,
+    StringFormat,
     Jump,
     JumpIfFalse,
     Loop,
@@ -186,7 +187,7 @@ struct VM {
     ObjString *allocateString(std::string string);
     bool beginCall(ObjFunction* function, int argCount);
     bool callValue(Value callee);
-    void printOperation(int argCount);
+    void stringFormat(int argCount);
 
     void binaryOperation(OpCode instruction);
     void binaryOperationDouble(OpCode instruction);
@@ -413,6 +414,10 @@ InterpretResult VM::run() {
                 push<Value>(str);
                 break;
             }
+            case OpCode::StringFormat: {
+                stringFormat(readByte());
+                break;
+            }
             case OpCode::Jump: {
                 int offset = readShort();
                 frame->ip += offset;
@@ -524,29 +529,22 @@ bool VM::callValue(Value callee) {
     });
 }
 
-void VM::printOperation(int argCount) {
-    // TODO: Fix this
-    assert(false);
-    // auto value = peek<double>();
-    // tfm::printf("%s\n", value);
-    // pop<double>();
+void VM::stringFormat(int argCount) {
 
-    // ObjString &string = peek(argCount - 1).asString();
+    ObjString &string = pop<Value>().asString();
 
-    // int numArg = 0;
-    // for (size_t i = 0; i < string.text.size(); i++) {
-    //     if (string.text[i] == '{' && i < string.text.size()) {
-    //         i ++;
-    //         tfm::printf("%s", peek(argCount - 2 - numArg));
-    //         numArg++;
-    //     } else {
-    //         tfm::printf("%s", string.text[i]);
-    //     }
-    // }
-    // tfm::printf("\n");
-    // for (int i = 0; i < argCount; i++) {
-    //     pop();
-    // }
+    std::ostringstream ss;
+
+    for (size_t i = 0; i < string.text.size(); i++) {
+        if (string.text[i] == '%' && i < string.text.size()) {
+            auto arg = pop<Value>().asString();
+            ss << arg.text;
+        } else {
+            ss << string.text[i];
+        }
+    }
+    Value outputString = allocateString(ss.str());
+    push(outputString);
 }
 
 void VM::binaryOperationDouble(OpCode instruction) {

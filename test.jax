@@ -6,8 +6,8 @@ var something = 100
 
 static {
   var cool_thing = 3
-  print(cool_thing)
-  print(clock_seconds())
+  var cs = clock_seconds()
+  print("clock seconds at compile time is $cs")
 
   print("This is printing at compile time: $cool_thing")
   add_code("var compile_value = something * 300\n")
@@ -15,7 +15,7 @@ static {
 }
 
 static if 3 > 2 {
-  print(200)
+  print("Conditionals at compile time")
 }
 
 
@@ -177,8 +177,9 @@ fun fib(n): number {
 //}
 //
 
-static {
-  print(123)
-}
 var time = clock_seconds() - start
 print("time was $time s")
+
+static {
+  print("Finished compiling")
+}

@@ -280,7 +280,7 @@ int Compiler::resolveLocal(const std::string_view &name) {
             if (local->depth == -1) {
                 return -2;
             }
-            return i; // Everything is double size for now
+            return i;
         }
     }
 
@@ -549,6 +549,8 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
 
             Local &local = compiler->locals.back();
             local.type = functionTypeObj->parameterTypes[i];
+            
+            // TODO: bytecode only
             local.stackOffset = compiler->nextStackSlot;
             int slotSize = slotSizeOfType(local.type);
             compiler->nextStackSlot += slotSize;
@@ -848,7 +850,6 @@ void Parser::varDeclaration() {
         if (type == types::Void) {
             type = valueType;
         }
-        // Nothing happens the VM - it is just left on the stack
     } else {
         Type valueType = typecheckVarDeclaration(this, type, false);
         if (isBytecode) {
@@ -859,6 +860,7 @@ void Parser::varDeclaration() {
     consumeEndStatement("Expect ';' or newline after variable declaration.");
     compiler->markInitialized();
 
+    // Nothing happens the VM - it is just left on the stack
     if (!isBytecode) {
         ast->varDeclaration(nameToken, type, initializer);
     }
@@ -1148,7 +1150,7 @@ void Parser::stringAdvanced(bool parseFlags) {
 
     text += "\"";
 
-    std::vector<std::tuple<Token, Type>> idens;
+    std::vector<std::tuple<Token, Type, int>> idens;
 
     typecheckString(this);
 
@@ -1198,7 +1200,7 @@ void Parser::stringAdvanced(bool parseFlags) {
             }
             Type localType = compiler->locals[local].type;
 
-            idens.push_back({iden, localType});
+            idens.push_back({iden, localType, local});
 
 
             if (localType == types::Number) text += "%f";
@@ -1219,18 +1221,9 @@ void Parser::stringAdvanced(bool parseFlags) {
 
     
     if (isBytecode) {
-        vmWriter->string(string);
+        vmWriter->stringFormat(string, std::move(idens));
     } else {
-        ast->string(string);
-        if (idens.size() > 0) {
-            for (auto [iden, type] : idens) {
-                ast->variable(iden);
-                if (type == types::Bool) {
-                    ast->functionCallNative("_bool_to_string", 1);
-                }
-            }
-            ast->functionCallNative("_make_string", idens.size() + 1);
-        }
+        ast->stringFormat(string, std::move(idens));
     }
 }
 
