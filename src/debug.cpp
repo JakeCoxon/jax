@@ -89,10 +89,8 @@ int disassembleInstruction(const Chunk &chunk, int offset) {
             return simpleInstruction(chunk, "Negate", offset);
         case OpCode::Print:
             return byteInstruction(chunk, "Print", offset);
-        case OpCode::PrintDouble:
-            return byteInstruction(chunk, "PrintDouble", offset);
-        case OpCode::ToStringDouble:
-            return simpleInstruction(chunk, "ToStringDouble", offset);
+        case OpCode::DoubleToString:
+            return simpleInstruction(chunk, "DoubleToString", offset);
         case OpCode::StringFormat:
             return byteInstruction(chunk, "StringFormat", offset);
         case OpCode::Jump:

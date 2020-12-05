@@ -38,8 +38,7 @@ enum class OpCode: uint8_t {
     Not,
     Negate,
     Print,
-    PrintDouble,
-    ToStringDouble,
+    DoubleToString,
     StringFormat,
     Jump,
     JumpIfFalse,
@@ -404,12 +403,7 @@ InterpretResult VM::run() {
                 tfm::printf("%s\n", pop<Value>());
                 break;
             }
-            case OpCode::PrintDouble: {
-                readByte(); // discard
-                tfm::printf("%s\n", pop<double>());
-                break;
-            }
-            case OpCode::ToStringDouble: {
+            case OpCode::DoubleToString: {
                 auto str = allocateString(tfm::format("%s", pop<double>()));
                 push<Value>(str);
                 break;

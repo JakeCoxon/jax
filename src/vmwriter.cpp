@@ -62,7 +62,7 @@ struct VmWriter {
     void print() {
         Type argType = parser->compiler->expressionTypeStack.back();
         if (argType == types::Number || argType == types::Bool) {
-            emitByte(OpCode::ToStringDouble);
+            emitByte(OpCode::DoubleToString);
         }
         emitByte(OpCode::Print);
         emitByte(1); // 1 only for now
@@ -127,7 +127,7 @@ struct VmWriter {
             auto [iden, type, local] = *it;
             namedVariable(local, false);
             if (type == types::Number || type == types::Bool) {
-                emitByte(OpCode::ToStringDouble);
+                emitByte(OpCode::DoubleToString);
             }
         }
         string(format);
