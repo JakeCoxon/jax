@@ -60,8 +60,8 @@ if true {
 }
 
 while banana > 0 {
-	banana = banana - 1
-	print(banana)
+  banana = banana - 1
+  print(banana)
 }
 
 struct person {

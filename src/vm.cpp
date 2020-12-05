@@ -176,7 +176,6 @@ enum class InterpretResult {
 
 struct Parser;
 int disassembleInstruction(const Chunk &chunk, int offset);
-ObjFunction *compile(const std::string &source); // compiler.cpp
 
 struct VM {
     std::vector<CallFrame> frames;
@@ -256,18 +255,20 @@ struct VM {
 };
 
 InterpretResult VM::interpret(const std::string &source) {
-    ObjFunction *function = compile(source);
-    if (!function) {
-        return InterpretResult::CompileError;
-    }
+    // Not working yet
+    // ObjFunction *function = compile(source);
+    // if (!function) {
+    //     return InterpretResult::CompileError;
+    // }
 
-    // push(function);
-    // push<double>(0);
-    frames.push_back(CallFrame { function, 0, 0 });
+    // // push(function);
+    // // push<double>(0);
+    // frames.push_back(CallFrame { function, 0, 0 });
 
-    // InterpretResult result = run();
-    InterpretResult result = InterpretResult::Ok;
-    return result;
+    // // InterpretResult result = run();
+    // InterpretResult result = InterpretResult::Ok;
+    // return result;
+    assert(false);
 }
 
 template<typename... Args>

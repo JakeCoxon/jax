@@ -356,9 +356,12 @@ const char *tabs[] = {
 };
 
 struct CodeGen {
+
     Parser *parser = nullptr;
-    std::stringstream ss;
+    std::ostringstream &ss;
     int indent = 0;
+
+    CodeGen(std::ostringstream &ss): ss(ss) {}
 
     void addIndent() {
         ss << tabs[indent];
@@ -640,8 +643,8 @@ struct CodeGen {
     }
 };
 
-std::string generateCodeC(AstGen *astGen) {
-    CodeGen codeGen;
+void generateCodeC(AstGen *astGen, std::ostringstream &stream) {
+    CodeGen codeGen(stream);
     codeGen.parser = astGen->parser;
     
     codeGen.addTypedefs();
@@ -649,5 +652,4 @@ std::string generateCodeC(AstGen *astGen) {
     codeGen.addFunctions(astGen->functionInstantiations);
     codeGen.addMain(astGen->initialDeclaration);
 
-    return codeGen.ss.str();
 }

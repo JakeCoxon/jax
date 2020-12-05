@@ -241,7 +241,7 @@ void registerNative(
     parser->compiler->functionDeclarations.push_back(decl);
 }
 
-ObjFunction *compile(const std::string &source) {
+bool compileToString(const std::string &source, std::ostringstream &stream) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     AstGen ast;
@@ -266,42 +266,9 @@ ObjFunction *compile(const std::string &source) {
     parser.endCompiler();
 
     if (!parser.hadError) {
-        generateCodeC(&ast);
+        generateCodeC(&ast, stream);
     }
-    
-    return parser.hadError ? nullptr : function;
-
-}
-
-std::string compileToString(const std::string &source) {
-    Scanner scanner { source };
-    auto function = new ObjFunction();
-    AstGen ast;
-    VmWriter vmWriter;
-    Compiler compiler(function, CompilerType::Script, nullptr);
-    Parser parser { &scanner, &compiler, &ast, &vmWriter };
-    vmWriter.parser = &parser;
-    ast.parser = &parser;
-    typecheckInit(&parser);
-
-    registry(&parser);
-
-
-    parser.advance();
-
-    while (!parser.match(TokenType::EOF_)) {
-        while (parser.match(TokenType::Newline)) {}
-        parser.declaration();
-        while (parser.match(TokenType::Newline)) {}
-    }
-
-    parser.endCompiler();
-
-    std::string text;
-    if (!parser.hadError) {
-        text = generateCodeC(&ast);
-    }
-    return text;
+    return !parser.hadError;
     
 }
 

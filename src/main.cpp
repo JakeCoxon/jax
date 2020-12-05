@@ -46,15 +46,16 @@ static void runFile(const std::string &path) {
     std::string source = readFile(path);
     
     double startTimeCompile = clock_seconds();
-    std::string output = compileToString(source);
+    std::ostringstream output;
+    bool success = compileToString(source, output);
     double compileTime = clock_seconds() - startTimeCompile;
 
-    if (output.size()) {
-        std::cout << output << std::endl;
+    if (success) {
+        std::cout << output.str() << std::endl;
 
         std::ofstream myfile;
         myfile.open("output.c");
-        myfile << output;
+        myfile << output.str() << endl;
         myfile.close();
 
         double compileTimeFile = clock_seconds() - startTime;
