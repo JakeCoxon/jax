@@ -5,7 +5,7 @@ enum class TokenType {
     LeftSquare, RightSquare,
     Comma, Dot, Minus, Plus,
     Semicolon, Slash, Star,
-    Colon, At,
+    Colon, At, Dollar,
 
     // One or two character tokens.
     Bang, BangEqual,
@@ -43,6 +43,7 @@ struct Scanner {
     size_t lineStart = 0;
     int line = 1;
     int parens = 0;
+    bool isString = false;
 
     Token currentToken = {};
     Token previousToken = {};
@@ -53,6 +54,8 @@ struct Scanner {
     bool match(char expected);
     TokenType checkKeyword(size_t offset, const std::string &rest, TokenType type);
     TokenType identifierType();
+
+    Token scanTokenString();
 
     Token string();
     Token number();
@@ -124,6 +127,8 @@ static bool isAlpha(char c) {
 }
 
 Token Scanner::scanToken() {
+    if (isString) return scanTokenString();
+    
     skipWhitespace();
 
     start = current;
@@ -159,6 +164,7 @@ Token Scanner::scanToken() {
         case '*': return makeToken(TokenType::Star);
         case ':': return makeToken(TokenType::Colon);
         case '@': return makeToken(TokenType::At);
+        case '$': return makeToken(TokenType::Dollar);
         case '!':
             return makeToken(match('=') ? TokenType::BangEqual : TokenType::Bang);
         case '=':
@@ -176,6 +182,9 @@ Token Scanner::scanToken() {
 void Scanner::advanceToken() {
     previousToken = currentToken;
     currentToken = scanToken();
+    if (isString && currentToken.type != TokenType::String) {
+        isString = false;
+    }
 }
 
 
@@ -235,22 +244,48 @@ TokenType Scanner::identifierType() {
 }
 
 Token Scanner::string() {
+    isString = true;
     while (peek() != '"' && !isAtEnd()) {
         if (peek() == '\n') { 
-            line ++; lineStart = current + 1;
+            return makeToken(TokenType::String);
         }
-        if (peek() == '\\') {
-            advance();
-            if (peek() == '\\') advance();
-            else if (peek() == '"') advance();
-            else { errorToken("Invalid escape character."); }
+        else if (peek() == '$' || peek() == '\\') {
+            return makeToken(TokenType::String);
         }
         advance();
     }
-
+    isString = false;
     if (isAtEnd()) return errorToken("Unterminated string");
     advance(); // Closing quote
     return makeToken(TokenType::String);
+}
+
+Token Scanner::scanTokenString() {
+    start = current;
+
+    char c = advance();
+    if (c == '\n') {
+        line ++; lineStart = current + 1;
+        return makeToken(TokenType::String);
+    }
+    if (c == '$') return makeToken(TokenType::Dollar);
+
+    if (c == '\\') {
+        c = advance();
+        
+        if (c == '\\') {}
+        else if (c == '"') {}
+        else if (c == '$') {}
+        else if (c == 'n') {}
+        else { return errorToken("Invalid escape character."); }
+        return makeToken(TokenType::String);
+    }
+    else if (c == '"') {
+        isString = false;
+        return makeToken(TokenType::String);
+    }
+
+    return string();
 }
 
 Token Scanner::number() {

@@ -94,7 +94,9 @@ struct Compiler {
 struct ExpressionState {
     bool canAssign;
 };
-
+struct StringParseFlags {
+    bool indented;
+};
 
 struct Parser {
     Scanner *scanner;
@@ -165,7 +167,7 @@ struct Parser {
     void binary(ExpressionState es);
     void literal(ExpressionState es);
     void string(ExpressionState es);
-    void stringAdvanced(bool parseFlags=true);
+    void stringAdvanced(StringParseFlags spf);
     void at(ExpressionState es);
     void namedVariable(const std::string_view &name, ExpressionState es);
     void variable(ExpressionState es);
@@ -377,31 +379,33 @@ void Parser::errorAt(Token &token, const std::string &message) {
     hadError = true;
     std::cerr << "[line " << token.line << "] Error";
 
+    size_t tokenSize = fmax(token.text.size(), 1);
+
     if (token.type == TokenType::EOF_) {
         std::cerr << " at end: " << message << std::endl;
-    } else if (token.type == TokenType::Error) {
-        // Nothing
-    } else {
-        std::cerr << ": " << message << std::endl;
-
-        // Use a cursor to work backwards to find the line that
-        // the token is on and then print the line
-        std::cerr << std::endl;
-        size_t cursor = token.start;
-        while (cursor == 1 || (cursor > 1 && scanner->source[cursor - 1] != '\n')) {
-            cursor--;
-        }
-        size_t offsetInLine = token.start - cursor;
-        while (cursor < scanner->source.size()  && scanner->source[cursor] != '\n') {
-            std::cerr << scanner->source[cursor];
-            cursor++;
-        }
-        std::cerr << std::endl;
-        for (size_t i = 0; i < offsetInLine; i++) std::cerr << ' ';
-        for (size_t i = 0; i < fmax(token.text.size(), 1); i++) std::cerr << '^';
-        std::cerr << std::endl;
-        std::cerr << std::endl;
+        return;
     }
+    if (token.type == TokenType::Error) tokenSize = 1;
+
+    std::cerr << ": " << message << std::endl;
+
+    // Use a cursor to work backwards to find the line that
+    // the token is on and then print the line
+    std::cerr << std::endl;
+    size_t cursor = token.start;
+    while (cursor == 1 || (cursor > 1 && scanner->source[cursor - 1] != '\n')) {
+        cursor--;
+    }
+    size_t offsetInLine = token.start - cursor;
+    while (cursor < scanner->source.size()  && scanner->source[cursor] != '\n') {
+        std::cerr << scanner->source[cursor];
+        cursor++;
+    }
+    std::cerr << std::endl;
+    for (size_t i = 0; i < offsetInLine; i++) std::cerr << ' ';
+    for (size_t i = 0; i < tokenSize; i++) std::cerr << '^';
+    std::cerr << std::endl;
+    std::cerr << std::endl;
 }
 
 uint16_t Parser::makeConstant(Value value) {
@@ -1094,12 +1098,148 @@ void Parser::literal(ExpressionState es) {
 }
 
 void Parser::string(ExpressionState es) {
-    stringAdvanced(false);
+    StringParseFlags spf;
+    spf.indented = false;
+    stringAdvanced(spf);
 }
 
-void Parser::stringAdvanced(bool parseFlags) {
-    bool indented = false;
-    if (parseFlags) {
+void Parser::stringAdvanced(StringParseFlags spf) {
+
+    typecheckString(this);
+
+    Token string;
+    string.line = 0;
+    string.start = 0;
+    string.type = TokenType::String;
+    std::string &text = *new std::string(); // @leak
+
+    Token original = previous();
+    std::string_view originalText = previous().text;
+
+    text += originalText;
+
+    if (originalText.size() > 1 && originalText[originalText.size() - 1] == '"') {
+        string.text = text;
+        if (isBytecode) vmWriter->string(string);
+        else ast->string(string);
+        return;
+    }
+
+    std::vector<std::tuple<Token, Type, int>> idens;
+
+    while (true) {
+        if (match(TokenType::Dollar)) {
+            // Usually the scanner will revert isString after a non-string token
+            // has been produced. This flag will force it to continue to parse
+            // strings after the identifier.
+            scanner->isString = true;
+            consume(TokenType::Identifier, "Expect identifier after '$'.");
+
+            Token iden = previous();
+
+            int local = compiler->resolveLocal(iden.text);
+            if (local == -1) {
+                errorAt(iden, "Couldn't find variable.");
+                continue;
+            }
+            Type localType = compiler->locals[local].type;
+
+            idens.push_back({iden, localType, local});
+
+            if (localType == types::Number) text += "%f";
+            else if (localType == types::String) text += "%s";
+            else if (localType == types::Bool) text += "%s";
+            else if (localType == types::VoidPtr) text += "%p";
+            else {
+                error("Cannot format this type.");
+            }
+
+        }
+        else if (match(TokenType::String)) {
+            // This stuff is kinda weird because in bytecode
+            // mode we want literal strings so we need to
+            // unescape what we read, but in regular mode
+            // we want escaped strings
+            if (previous().text == "\n") {
+                text += '\n';
+            } else if (previous().text == "\\n") { 
+                if (isBytecode) text += '\n';
+                else text += previous().text;
+            } else if (previous().text.size() == 2 && previous().text[0] == '\\') {
+                if (isBytecode) text += previous().text[1];
+                else text += previous().text;
+            } else if (previous().text[previous().text.size() - 1] == '"') {
+                text += previous().text;
+                break; // End quote
+            } else {
+                text += previous().text;
+            }
+        } else {
+            error("Unexpected token.");
+        }
+    }
+
+    auto measureString = [](std::string_view view) {
+
+        int minIndent = 1000;
+        int currentLineIndent = 0;
+        for (size_t i = 0; i < view.size(); i++) {
+
+            if (view[i] == ' ') {
+                currentLineIndent ++;
+            } else if (view[i] != '\n' && view[i] != '\t') {
+                minIndent = currentLineIndent < minIndent ? currentLineIndent : minIndent;
+                if (minIndent == 0) return 0;
+                currentLineIndent = 0;
+                while (i < view.size() && view[i] != '\n') {
+                    i ++;
+                }
+            } else if (view[i] == '\n') {
+                currentLineIndent = 0;
+            }
+
+        }
+        return minIndent == 1000 ? 0 : minIndent;
+    };
+
+    auto unindentString = [](std::string_view view, int indent) {
+        std::string text = "\"";
+        // TODO: use a string builder?
+        for (size_t i = 0; i < view.size(); i++) {
+            if (view[i] == '\n') {
+                text += '\\';
+                text += 'n';
+                if (indent > 0) {
+                    for (int j = 0; j < indent && i < view.size(); j++, i++);
+                }
+            } else {
+                text += view[i];
+            }
+        }
+        text += '\"';
+        return text;
+    };
+    if (spf.indented) {
+        std::string_view withoutQuotes = text;
+        withoutQuotes.remove_prefix(1);
+        withoutQuotes.remove_suffix(1);
+        int indent = measureString(withoutQuotes);
+        text = unindentString(withoutQuotes, indent);
+    }
+    string.text = text;
+
+    if (isBytecode) {
+        vmWriter->stringFormat(string, std::move(idens));
+    } else {
+        ast->stringFormat(string, std::move(idens));
+    }
+}
+
+void Parser::at(ExpressionState es) {
+    consume(TokenType::Identifier, "Expect identifier after '@'.");
+
+    if (previous().text == "string") {
+        bool indented = false;
         consume(TokenType::LeftParen, "Expect '(' after 'string'.");
 
         while (true) {
@@ -1113,125 +1253,9 @@ void Parser::stringAdvanced(bool parseFlags) {
         }
 
         consume(TokenType::String, "Expect string literal.");
-    }
-
-    Token original = previous();
-    std::string_view originalText = previous().text;
-    originalText.remove_prefix(1);
-    originalText.remove_suffix(1);
-
-    Token string;
-    string.type = TokenType::String;
-    std::string &text = *new std::string(); // @leak
-
-    auto measureString = [](std::string_view view) {
-
-        int minIndent = 1000;
-        int currentLineIndent = 0;
-        for (size_t i = 0; i < view.size(); i++) {
-
-            if (view[i] == ' ') {
-                currentLineIndent ++;
-            } else if (view[i] != '\n' && view[i] != '\t') {
-                minIndent = currentLineIndent < minIndent ? currentLineIndent : minIndent;
-                currentLineIndent = 0;
-                while (i < view.size() && view[i] != '\n') {
-                    i ++;
-                }
-            } else if (view[i] == '\n') {
-                currentLineIndent = 0;
-            }
-
-        }
-        return minIndent == 1000 ? 0 : minIndent;
-    };
-
-    int indent = indented ? measureString(originalText) : 0;
-
-    text += "\"";
-
-    std::vector<std::tuple<Token, Type, int>> idens;
-
-    typecheckString(this);
-
-    int line = 0;
-
-    // TODO: use a string builder?
-    for (size_t i = 0; i < originalText.size(); i++) {
-        if (originalText[i] == '\\' && isBytecode /* hmmm */) {
-            i ++;
-            if (i < originalText.size()) {
-                if (originalText[i] == '\\') text += '\\';
-                else if (originalText[i] == '\"') text += '\"';
-                else if (originalText[i] == 'n') text += '\n';
-                else { error("Invalid escape character."); }
-            }
-        } else if (originalText[i] == '\n') {
-            line ++;
-            text += '\\';
-            text += 'n';
-            if (indent > 0) {
-                for (int j = 0; j < indent && i < originalText.size(); j++, i++);
-            }
-        } else if (originalText[i] == '$') {
-            i++;
-            int start = i;
-            if (i < originalText.size() && !isAlpha(originalText[i])) {
-                error("Expected literal"); return;
-            }
-            i++;
-            while (i < originalText.size() && (isAlpha(originalText[i]) || isDigit(originalText[i]))) {
-                i++;
-            }
-
-
-
-            Token iden;
-            iden.type == TokenType::Identifier;
-            iden.start = original.start + start + 1; // Skip the "
-            iden.line = original.line + line;
-            iden.text = std::string_view(&originalText[start], i - start);
-            i--; // Because for loop will increment
-
-            int local = compiler->resolveLocal(iden.text);
-            if (local == -1) {
-                errorAt(iden, "Couldn't find variable.");
-                continue;
-            }
-            Type localType = compiler->locals[local].type;
-
-            idens.push_back({iden, localType, local});
-
-
-            if (localType == types::Number) text += "%f";
-            else if (localType == types::String) text += "%s";
-            else if (localType == types::Bool) text += "%s";
-            else if (localType == types::VoidPtr) text += "%p";
-            else {
-                error("Cannot format this type.");
-                continue;
-            }
-            
-        } else {
-            text += originalText[i];
-        }
-    }
-    text += "\"";
-    string.text = text;
-
-    
-    if (isBytecode) {
-        vmWriter->stringFormat(string, std::move(idens));
-    } else {
-        ast->stringFormat(string, std::move(idens));
-    }
-}
-
-void Parser::at(ExpressionState es) {
-    consume(TokenType::Identifier, "Expect identifier after '@'.");
-
-    if (previous().text == "string") {
-        stringAdvanced(true);
+        StringParseFlags spf;
+        spf.indented = indented;
+        stringAdvanced(spf);
     }
 }
 
@@ -1400,6 +1424,7 @@ ParseRule rules[] = {
     {nullptr,           &Parser::binary,   Precedence::Factor},     // Star
     {nullptr,           nullptr,           Precedence::None},       // Colon
     {&Parser::at,       nullptr,           Precedence::None},       // At
+    {nullptr,           nullptr,           Precedence::None},       // Dollar
     {&Parser::unary,    nullptr,           Precedence::None},       // Bang
     {nullptr,           &Parser::binary,   Precedence::Equality},   // BangEqual
     {nullptr,           nullptr,           Precedence::None},       // Equal

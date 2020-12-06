@@ -5,13 +5,16 @@ var start = clock_seconds()
 var something = 100
 
 static {
-  var cool_thing = 3
+  var cool_thing = 1
+  cool_thing = cool_thing * 2
+  cool_thing = cool_thing * 2
+  cool_thing = cool_thing * 2
+  
   var cs = clock_seconds()
-  print("clock seconds at compile time is $cs")
 
-  print("This is printing at compile time: $cool_thing")
+  print("This is\" printing at compile time: $cool_thing")
   add_code("var compile_value = something * 300\n")
-  add_code("print(compile_value)\n")
+  add_code("print(\"compile value is \$compile_value\")\n")
 }
 
 static if 3 > 2 {
@@ -27,7 +30,7 @@ var thing = @string(indented) "
         banana = $banana
 "
 
-print("apple is $apple asdasd ")
+print("apple is $apple ")
 // print(banana)
 
 // banana = banana - 1
@@ -181,5 +184,5 @@ var time = clock_seconds() - start
 print("time was $time s")
 
 static {
-  print("Finished compiling")
+  print("Finished parsing")
 }

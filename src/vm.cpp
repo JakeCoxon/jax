@@ -531,6 +531,7 @@ void VM::stringFormat(int argCount) {
 
     for (size_t i = 0; i < string.text.size(); i++) {
         if (string.text[i] == '%' && i < string.text.size()) {
+            i++;
             auto arg = pop<Value>().asString();
             ss << arg.text;
         } else {
