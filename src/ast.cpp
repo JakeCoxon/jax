@@ -181,17 +181,8 @@ struct AstGen {
         expressionStack.push_back(expr);
     }
 
-    void stringFormat(Token format, std::vector<std::tuple<Token, Type, int>> idens) {
-        string(format);
-        if (idens.size() > 0) {
-            for (auto [iden, type, local] : idens) {
-                variable(iden);
-                if (type == types::Bool) {
-                    functionCallNative("_bool_to_string", 1);
-                }
-            }
-            functionCallNative("_make_string", idens.size() + 1);
-        }
+    void stringFormat(int numArgs) {
+        functionCallNative("_make_string", numArgs + 1);
     }
 
     void infix(Token operatorToken) {

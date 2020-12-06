@@ -116,23 +116,13 @@ struct VmWriter {
         emitConstant(objStr);
     }
 
-    void stringFormat(Token format, std::vector<std::tuple<Token, Type, int>> idens) {
-        if (idens.size() == 0) {
-            string(format);
-            return;
-        }
-
-        // Reverse order so we can pop in order
-        for (auto it = idens.rbegin(); it != idens.rend(); it++) {
-            auto [iden, type, local] = *it;
-            namedVariable(local, false);
-            if (type == types::Number || type == types::Bool) {
-                emitByte(OpCode::DoubleToString);
-            }
-        }
-        string(format);
+    void stringFormat(int numArgs) {
         emitByte(OpCode::StringFormat);
-        emitByte(idens.size());
+        emitByte(numArgs);
+    }
+
+    void doubleToString() {
+        emitByte(OpCode::DoubleToString);
     }
 
     void infix(TokenType operatorType) {

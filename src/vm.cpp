@@ -232,6 +232,13 @@ struct VM {
         return *reinterpret_cast<T*>(&stack[index]);
     }
 
+    template <typename T>
+    T peekNum(int count) {
+        const int num_slots = sizeof(T) / sizeof(uint32_t);
+        size_t index = stack.size() - num_slots * count;
+        return *reinterpret_cast<T*>(&stack[index]);
+    }
+
 
     template <typename T>
     T &stack_as(size_t index) {
@@ -530,14 +537,20 @@ void VM::stringFormat(int argCount) {
 
     std::ostringstream ss;
 
+    int argNum = 0;
     for (size_t i = 0; i < string.text.size(); i++) {
         if (string.text[i] == '%' && i < string.text.size()) {
             i++;
-            auto arg = pop<Value>().asString();
+            // This is only safe if all arguments are of type Value!
+            auto arg = peekNum<Value>(argCount - argNum).asString();
+            argNum ++;
             ss << arg.text;
         } else {
             ss << string.text[i];
         }
+    }
+    for (int i = 0; i < argCount; i++) {
+        pop<Value>();
     }
     Value outputString = allocateString(ss.str());
     push(outputString);

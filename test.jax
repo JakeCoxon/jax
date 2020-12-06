@@ -6,15 +6,15 @@ var something = 100
 
 static {
   var cool_thing = 1
-  var i = 1
-  while i < 10 {
-    cool_thing = cool_thing * 2
-    i = i + 1
-  }
+  // var i = 1
+  // while i < 10 {
+  //   cool_thing = cool_thing * 2
+  //   i = i + 1
+  // }
   
   var cs = clock_seconds()
 
-  print("This is printing at compile time: $cool_thing")
+  print("This is $cs printing at compile time: $cool_thing")
   add_code("var compile_value = $cool_thing\n")
   add_code("print(\"compile value is \$compile_value\")\n")
 }
@@ -80,11 +80,9 @@ me.firstname = "Jake"
 me.lastname = "Someone"
 me.age = 200
 
-print(me.firstname)
-print(me.age + 10)
 var fn = me.firstname
 var ln = me.lastname
-// print("fullname is $fn $ln")
+print("fullname is $fn $ln")
 
 
 

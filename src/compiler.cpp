@@ -1108,25 +1108,44 @@ void Parser::stringAdvanced(StringParseFlags spf) {
 
     typecheckString(this);
 
+    Token original = previous();
+    std::string_view originalText = previous().text;
+
+    // Quick return when there's no fancy stuff
+    if (originalText.size() > 1 && originalText[originalText.size() - 1] == '"') {
+        if (isBytecode) vmWriter->string(original);
+        else ast->string(original);
+        return;
+    }
+
     Token string;
     string.line = 0;
     string.start = 0;
     string.type = TokenType::String;
-    std::string &text = *new std::string(); // @leak
 
-    Token original = previous();
-    std::string_view originalText = previous().text;
+    std::ostringstream ss;
+    ss << originalText;
 
-    text += originalText;
+    StringLiteral *stringExpr = nullptr;
 
-    if (originalText.size() > 1 && originalText[originalText.size() - 1] == '"') {
-        string.text = text;
-        if (isBytecode) vmWriter->string(string);
-        else ast->string(string);
-        return;
+    if (!isBytecode) {
+        // We do something unusual here, for non bytecode string
+        // format we want the string first, and the arguments are
+        // varargs to a C function. But we don't have the full string
+        // until after we've traversed the arguments. So store the
+        // expression, and update the string_view at the end. We
+        // normally don't do something like this so be careful.
+        ast->string(string);
+        stringExpr = &mpark::get<StringLiteral>(ast->expressionStack.back()->variant);
+
+        // For bytecode its actually far better to have the format
+        // string last so it can pop arguments off the stack as the
+        // vm traverses the format string. However its harder to have
+        // the arguments, but the VM can at least read the arguments
+        // in forward order, because all arguments are of type Value
     }
 
-    std::vector<std::tuple<Token, Type, int>> idens;
+    int numArgs = 0;
 
     while (true) {
         if (match(TokenType::Dollar)) {
@@ -1143,17 +1162,29 @@ void Parser::stringAdvanced(StringParseFlags spf) {
                 errorAt(iden, "Couldn't find variable.");
                 continue;
             }
+
             Type localType = compiler->locals[local].type;
+            if (isBytecode) {
+                vmWriter->namedVariable(local, false);
+                if (localType == types::Number || localType == types::Bool) {
+                    vmWriter->doubleToString();
+                }
+            } else {
+                ast->variable(iden);
+                if (localType == types::Bool) {
+                    ast->functionCallNative("_bool_to_string", 1);
+                }
+            }
 
-            idens.push_back({iden, localType, local});
-
-            if (localType == types::Number) text += "%f";
-            else if (localType == types::String) text += "%s";
-            else if (localType == types::Bool) text += "%s";
-            else if (localType == types::VoidPtr) text += "%p";
+            if (localType == types::Number) ss << "%f";
+            else if (localType == types::String) ss << "%s";
+            else if (localType == types::Bool) ss << "%s";
+            else if (localType == types::VoidPtr) ss << "%p";
             else {
                 error("Cannot format this type.");
             }
+
+            numArgs ++;
 
         }
         else if (match(TokenType::String)) {
@@ -1162,18 +1193,18 @@ void Parser::stringAdvanced(StringParseFlags spf) {
             // unescape what we read, but in regular mode
             // we want escaped strings
             if (previous().text == "\n") {
-                text += '\n';
+                ss << '\n';
             } else if (previous().text == "\\n") { 
-                if (isBytecode) text += '\n';
-                else text += previous().text;
+                if (isBytecode) ss << '\n';
+                else ss << previous().text;
             } else if (previous().text.size() == 2 && previous().text[0] == '\\') {
-                if (isBytecode) text += previous().text[1];
-                else text += previous().text;
+                if (isBytecode) ss << previous().text[1];
+                else ss << previous().text;
             } else if (previous().text[previous().text.size() - 1] == '"') {
-                text += previous().text;
+                ss << previous().text;
                 break; // End quote
             } else {
-                text += previous().text;
+                ss << previous().text;
             }
         } else {
             error("Unexpected token.");
@@ -1204,36 +1235,43 @@ void Parser::stringAdvanced(StringParseFlags spf) {
     };
 
     auto unindentString = [](std::string_view view, int indent) {
-        std::string text = "\"";
-        // TODO: use a string builder?
+        std::ostringstream text;
+        text << '\"';
         for (size_t i = 0; i < view.size(); i++) {
             if (view[i] == '\n') {
-                text += '\\';
-                text += 'n';
+                text << '\\';
+                text << 'n';
                 if (indent > 0) {
                     for (int j = 0; j < indent && i < view.size(); j++, i++);
                 }
             } else {
-                text += view[i];
+                text << view[i];
             }
         }
-        text += '\"';
-        return text;
+        text << '\"';
+        return text.str();
     };
+
+    std::string *heapString = new std::string(); // @leak
     if (spf.indented) {
-        std::string_view withoutQuotes = text;
+        std::string_view withoutQuotes = ss.str();
         withoutQuotes.remove_prefix(1);
         withoutQuotes.remove_suffix(1);
         int indent = measureString(withoutQuotes);
-        text = unindentString(withoutQuotes, indent);
+        *heapString = unindentString(withoutQuotes, indent);
+    } else {
+        *heapString = ss.str();
     }
-    string.text = text;
 
     if (isBytecode) {
-        vmWriter->stringFormat(string, std::move(idens));
+        string.text = std::string_view(*heapString);
+        vmWriter->string(string);
+        vmWriter->stringFormat(numArgs);
     } else {
-        ast->stringFormat(string, std::move(idens));
+        stringExpr->name.text = std::string_view(*heapString);
+        ast->stringFormat(numArgs);
     }
+
 }
 
 void Parser::at(ExpressionState es) {
