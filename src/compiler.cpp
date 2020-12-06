@@ -806,17 +806,18 @@ void Parser::ifStatement() {
 }
 
 void Parser::whileStatement() {
-    expression();
+    WhileStatementPatchState patchState;
+    if (isBytecode) { patchState = vmWriter->beginWhileStatementBlock(); }
     
-    typecheckIfCondition(this);
+    expression();
     consume(TokenType::LeftBrace, "Expect '{' after condition.");
 
-    WhileStatementPatchState patchState;
-    
-    if (isBytecode) { patchState = vmWriter->beginWhileStatementBlock(); }
+    if (isBytecode) vmWriter->endWhileCondition(&patchState);
 
     beginScope();
     if (!isBytecode) ast->beginWhileStatementBlock();
+    typecheckIfCondition(this);
+
     block();
     if (!isBytecode) ast->endBlock();
     endScope();

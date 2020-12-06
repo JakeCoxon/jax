@@ -266,9 +266,10 @@ InterpretResult VM::interpret(const std::string &source) {
     // frames.push_back(CallFrame { function, 0, 0 });
 
     // // InterpretResult result = run();
-    // InterpretResult result = InterpretResult::Ok;
-    // return result;
     assert(false);
+    InterpretResult result = InterpretResult::Ok;
+    return result;
+
 }
 
 template<typename... Args>

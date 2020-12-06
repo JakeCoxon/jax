@@ -188,15 +188,15 @@ struct VmWriter {
 
     WhileStatementPatchState beginWhileStatementBlock() {
         WhileStatementPatchState state;
-
         state.loopStart = currentChunk().code.size();
-        state.conditionSlots = slotSizeOfType(parser->compiler->expressionTypeStack.back());
-
-        state.exitJump = emitJump(OpCode::JumpIfFalse);
+        return state;
+    }
+    void endWhileCondition(WhileStatementPatchState *state) {
+        state->conditionSlots = slotSizeOfType(parser->compiler->expressionTypeStack.back());
+        state->exitJump = emitJump(OpCode::JumpIfFalse);
 
         emitByte(OpCode::Pop);
-        emitByte(state.conditionSlots);
-        return state;
+        emitByte(state->conditionSlots);
     }
 
     void endWhileStatementBlock(WhileStatementPatchState *state) {

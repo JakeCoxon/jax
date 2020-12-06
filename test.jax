@@ -6,14 +6,16 @@ var something = 100
 
 static {
   var cool_thing = 1
-  cool_thing = cool_thing * 2
-  cool_thing = cool_thing * 2
-  cool_thing = cool_thing * 2
+  var i = 1
+  while i < 10 {
+    cool_thing = cool_thing * 2
+    i = i + 1
+  }
   
   var cs = clock_seconds()
 
-  print("This is\" printing at compile time: $cool_thing")
-  add_code("var compile_value = something * 300\n")
+  print("This is printing at compile time: $cool_thing")
+  add_code("var compile_value = $cool_thing\n")
   add_code("print(\"compile value is \$compile_value\")\n")
 }
 
