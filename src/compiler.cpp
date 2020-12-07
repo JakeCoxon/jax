@@ -28,6 +28,8 @@ struct Local {
     int depth;
     int stackOffset = -1;
     bool isStatic = false;
+    std::string_view renamedTo;
+    int renamedFromNum = 0;
 
     Local(const std::string_view &name, int depth, int stackOffset):
         name(name), depth(depth), stackOffset(stackOffset) {};
@@ -174,6 +176,7 @@ struct Compiler {
     ObjFunction *function;
     CompilerType type;
     Compiler *enclosing;
+    Compiler *inlinedFrom;
     std::vector<Local> locals;
     std::vector<Type> expressionTypeStack;
     std::vector<FunctionDeclaration*> functionDeclarations;
@@ -192,6 +195,7 @@ struct Compiler {
     int resolveLocal(const std::string_view &name);
     FunctionDeclaration *resolveFunctionDeclaration(const std::string_view &name);
     void declareVariable(Parser* parser, const std::string_view& name);
+    void handleRenames(Parser *parser, Local &newLocal);
     void markInitialized();
 };
 
@@ -307,7 +311,87 @@ FunctionDeclaration *Compiler::resolveFunctionDeclaration(const std::string_view
     return nullptr;
 }
 
+void Compiler::handleRenames(Parser *parser, Local &newLocal) {
+    // Check if we need to rename a variable due to inlining.
+    // Is this nicer as a recursive function, maybe to declareVariable????
+
+    if (!parser->compiler->inlinedFrom) return;
+
+    Compiler *topLevel = parser->compiler->inlinedFrom;
+    while (topLevel->inlinedFrom) {
+        topLevel = topLevel->inlinedFrom;
+    }
+
+    Local *foundLocal = nullptr;
+    for (int i = topLevel->locals.size() - 1; i >= 0; i--) {
+        Local* local = &topLevel->locals[i];
+        if (newLocal.name == local->name) {
+            foundLocal = local;
+            break;
+        }
+    }
+
+    std::string_view newNameView = newLocal.name;
+    if (foundLocal) {
+        foundLocal->renamedFromNum ++;
+        std::ostringstream str;
+        str << "_shadow_" << newLocal.name;
+        if (foundLocal->renamedFromNum > 1) {
+            str << foundLocal->renamedFromNum;
+        }
+        std::string *myString = new std::string(str.str()); // @leak
+        newNameView = std::string_view(*myString);
+        newLocal.renamedTo = newNameView;
+    }
+
+    // Add a new local that shouldn't be touched (Ensure this somehow).
+    // This makes it so multiple inlines of the same function will be correctly
+    // renamed, and it will make sure any variables of this name *later in the
+    // original function* will be correctly renamed. This local should have the
+    // correct scopeDepth so it will be destroyed at the end of the scope.
+    // This local should be before any uninitialised local, to maintain the
+    // correct ordering of locals, plus then markInitialized can just read the top
+    int newIndex = topLevel->locals.size();
+    if (newIndex > 0 && topLevel->locals[newIndex - 1].depth == -1) {
+        newIndex --;
+    }
+    int newStackOffset = newIndex > 0 ? topLevel->locals[newIndex - 1].stackOffset : 0;
+    topLevel->locals.insert(topLevel->locals.begin() + newIndex,
+        { newNameView, topLevel->scopeDepth, newStackOffset });
+
+    // bool didRename = inlineCompiler->inlinedFrom->declareVariableDidRename(parser, local.name);
+    // Take the name from the recently added local, whether it did rename or not.
+    // If we renamed the inlined one, that means it will already have the new name.
+    // std::string newName = inlineCompiler->inlinedFrom->locals.back().name;
+    
+
+
+
+    // Compiler *inlineCompiler = this;
+    // Local *foundLocal = nullptr;
+    // while (inlineCompiler->inlinedFrom) {
+    //     inlineCompiler = inlineCompiler->inlinedFrom;
+
+    //     for (int i = inlineCompiler->locals.size() - 1; i >= 0; i--) {
+    //         Local* local = &inlineCompiler->locals[i];
+    //         if (newLocal.name == local->name) {
+    //             foundLocal = local;
+    //             break;
+    //         }
+    //     }
+
+
+    // }
+    // if (foundLocal) {
+    //     newLocal.renamedTo = "generated_fresh_name";
+    // }
+}
+
 void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
+    if (locals.size() == UINT8_COUNT) {
+        parser->error("Too many local variables on the stack.");
+    }
+
     for (int i = locals.size() - 1; i >= 0; i--) {
         Local* local = &locals[i];
         if (local->depth != -1 && local->depth < scopeDepth) {
@@ -318,10 +402,9 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
             parser->error("Already variable with this name in this scope.");
         }
     }
-    if (locals.size() == UINT8_COUNT) {
-        parser->error("Too many local variables on the stack.");
-    }
-    locals.push_back(Local { name, -1, -1 });
+    locals.push_back({ name, -1, -1 });
+    
+    handleRenames(parser, locals.back());
 }
 
 void Compiler::markInitialized() {
@@ -781,7 +864,7 @@ void Parser::varDeclaration() {
 
     // Nothing happens the VM - it is just left on the stack
     if (!isBytecode) {
-        ast->varDeclaration(nameToken, type, initializer);
+        ast->varDeclaration(initializer);
     }
 }
 
@@ -996,7 +1079,7 @@ void Parser::stringAdvanced(StringParseFlags spf) {
                     vmWriter->doubleToString();
                 }
             } else {
-                ast->variable(iden);
+                ast->variable(local);
                 if (localType == types::Bool) {
                     ast->functionCallNative("_bool_to_string", 1);
                 }
@@ -1207,9 +1290,10 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     if (arg != -1) {
         typecheckVariable(this, arg);
         Local &local = compiler->locals[arg];
+
         if (!isBytecode) {
             if (local.isStatic) vmWriter->namedVariable(arg, false);
-            else ast->variable(nameToken);
+            else ast->variable(arg);
         }
 
         if (es.canAssign && match(TokenType::Equal)) {

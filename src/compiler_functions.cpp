@@ -300,6 +300,7 @@ void Parser::callLambda(ExpressionState es) {
     Scanner *initialScanner = this->scanner;
 
     Compiler *newCompiler = new Compiler(&function, CompilerType::Function, funDecl->enclosingCompiler);
+    newCompiler->inlinedFrom = this->compiler;
     newCompiler->hasImplicitReturn = true;
 
     this->compiler = newCompiler;

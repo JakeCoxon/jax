@@ -40,7 +40,9 @@ struct AssignmentExpr {
     Expr *value = nullptr;
 };
 struct VariableLiteral {
-    Token name;
+    std::string_view name;
+    //we may have renamed
+    // TODO: token info here?
 };
 struct TypeLiteral {
     Type type;
@@ -69,7 +71,7 @@ struct FunInstantiation {
     FunctionInstantiation inst;
 };
 struct VarDeclaration {
-    Token name;
+    std::string_view name;
     Type type;
     Expr *value = nullptr;
 };
@@ -152,11 +154,12 @@ struct AstGen {
         lit->name = name;
         expressionStack.push_back(expr);
     }
-    void variable(Token name) {
+    void variable(int localIndex) {
+        Local &local = parser->compiler->locals[localIndex];
         auto expr = new Expr;
         auto var = makeVariant<VariableLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        var->name = name;
+        var->name = local.renamedTo.size() ? local.renamedTo : local.name;
         expressionStack.push_back(expr);
     }
     void booleanLiteral(bool value) {
@@ -302,12 +305,14 @@ struct AstGen {
         nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
     }
     
-    void varDeclaration(Token name, Type type, bool initializer) {
+    void varDeclaration(bool initializer) {
+        Local &local = parser->compiler->locals.back();
+
         auto decl = pushNewDeclaration();
         auto varDecl = makeVariant<VarDeclaration>(decl);
-        varDecl->name = name;
+        varDecl->name = local.renamedTo.size() ? std::string_view(local.renamedTo) : local.name;
         varDecl->value = initializer ? popExpression() : nullptr;
-        varDecl->type = type;
+        varDecl->type = local.type;
     }
 
     void print() {
@@ -360,7 +365,7 @@ struct AstGen {
 
         Expr *returnExpr = exprStmt->expr;
         expressionStack.push_back(returnExpr);
-        
+
         // Quick go at removing last element. Maybe doubley linked
         // list in the future? Finds second to last element
         Declaration *decl = initialDeclaration;
@@ -486,7 +491,7 @@ struct CodeGen {
                 addExpr(ex.value, false);
             },
             [&](VariableLiteral &ex) {
-                ss << ex.name.text;
+                ss << ex.name;
             },
             [&](TypeLiteral &ty) {
                 addTypeName(ty.type);
@@ -609,7 +614,7 @@ struct CodeGen {
                 addIndent();
                 addTypeName(var.type);
                 ss << " ";
-                ss << var.name.text;
+                ss << var.name;
                 if (var.value) {
                     ss << " = ";
                     addExpr(var.value, false);
