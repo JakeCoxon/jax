@@ -221,7 +221,6 @@ void registerNative(
     // TODO: garbage collection
     auto functionName = new ObjString{name};
     FunctionInstantiation inst = {type, native};
-    // TODO: This is broken for some reason
     auto constant = parser->makeConstant(native);
 
     auto decl = new FunctionDeclaration;
@@ -1358,7 +1357,9 @@ void Parser::lambda(ExpressionState es) {
         return;
     }
 
-    auto function = new ObjFunction();
+    auto function = new ObjFunction(); // @leak
+    function->name = new ObjString("lambda"); // @leak
+
     Compiler *enclosingCompiler = compiler;
     Compiler *functionCompiler = new Compiler(function, CompilerType::Function, enclosingCompiler);
     uint16_t constant = makeConstant(function);
@@ -1366,7 +1367,7 @@ void Parser::lambda(ExpressionState es) {
     std::vector<FunctionParameter> parameters;
 
     auto decl = new FunctionDeclaration; // @leak
-    decl->name = "lambda";
+    decl->name = std::string_view(function->name->text);
     decl->parameters = parameters;
     decl->returnType = types::Void;
     decl->polymorphic = true;

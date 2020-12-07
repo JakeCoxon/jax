@@ -107,18 +107,22 @@ var a = [10, 2.22, 33123123.0, 123123, 2.34]
 
 var i = 0
 while i < a.len {
-  print(a[i])
+  var v = a[i]
+  print("iterating: $v")
   i = i + 1
 }
 
 static var blk = block {
-  print("balls")
+  print("Print something")
 }
-var x = blk()
-blk()
-blk()
-blk()
-blk()
+static var my_cool_blk: lambda
+static if 123 > 20 {
+  my_cool_blk = blk
+}
+// Inlines the lambda contents
+my_cool_blk()
+my_cool_blk()
+my_cool_blk()
 
 // fun map(a: array, blk: block) @inline {
 //   a = []
@@ -141,7 +145,6 @@ blk()
 // print(200 + things(true, 6))
 
 fun compare(x, y) {
- 
   if x == y {
     print("They are the same")
   }

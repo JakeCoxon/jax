@@ -246,6 +246,8 @@ struct VM {
 
     template <typename T>
     T &stack_as(size_t index) {
+        const int num_slots = sizeof(T) / sizeof(uint32_t);
+        assert(index + num_slots <= stack.size());
         return *reinterpret_cast<T*>(&stack[index]);
     }
 
@@ -355,8 +357,8 @@ InterpretResult VM::run() {
             }
             case OpCode::Nil: 
                 // assert(false);
-                push<double>(0.0);
-                // push<double>(Value::Nil());
+                // push<double>(0.0); 
+                push<Value>(Value::Nil());
                 break;
             case OpCode::True: push<double>(true); break;
             case OpCode::False: push<double>(false); break;
@@ -369,7 +371,8 @@ InterpretResult VM::run() {
             }
             case OpCode::GetLocal: {
                 uint8_t slot = readByte();
-                push(stack_as<Value>(frame->firstSlot + slot));
+                Value value = stack_as<Value>(frame->firstSlot + slot);
+                push(value);
                 break;
             }
             case OpCode::GetLocalDouble: {
