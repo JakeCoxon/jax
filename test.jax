@@ -112,6 +112,14 @@ while i < a.len {
   i = i + 1
 }
 
+// fun run(blk: lambda): number @inline {
+//   blk()
+//   blk()
+//   blk()
+//   blk()
+//   return 5
+// }
+
 static var blk = block {
   print("Print something")
 }
@@ -123,6 +131,8 @@ static if 123 > 20 {
 my_cool_blk()
 my_cool_blk()
 my_cool_blk()
+
+// run(my_cool_blk)
 
 // fun map(a: array, blk: block) @inline {
 //   a = []

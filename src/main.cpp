@@ -5,9 +5,7 @@
 #include <stdlib.h>
 
 #include "scanner.cpp"
-#include "value.cpp"
 #include "vm.cpp"
-#include "debug.cpp"
 #include "compiler.cpp"
 #include "natives.cpp"
 
