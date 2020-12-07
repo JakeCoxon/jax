@@ -23,11 +23,8 @@ struct VmWriter {
         vm.frames.push_back(CallFrame { function, 0, 0 });
     }
 
-    void run() {
-        vm.run();
-    }
-    
     void emitReturn();
+    void emitConstant(uint16_t constantIndex);
     void emitConstant(Value value);
     void emitDoubleConstant(double value);
     int emitJump(OpCode instruction);
@@ -286,7 +283,13 @@ void VmWriter::emitReturn() {
     emitByte(OpCode::Nil);
     emitByte(OpCode::Return);
 }
-
+void VmWriter::emitConstant(uint16_t constantIndex) {
+    if (constantIndex < 256) {
+        emitByte(OpCode::Constant); emitByte(constantIndex);
+    } else {
+        assert(false); // Not implemented yet. Use a wide opcode
+    }
+}
 void VmWriter::emitConstant(Value value) {
     uint16_t constantIndex = parser->makeConstant(value);
 

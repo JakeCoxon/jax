@@ -54,6 +54,7 @@ fun hello(x: number, y: bool, z: string) {
 }
 hello(2, apple < 40, thing)
 
+
 // fun things(a, b): number {
 //   return 123 + a * b
 // }
@@ -110,6 +111,30 @@ while i < a.len {
   i = i + 1
 }
 
+static var blk = block {
+  print("balls")
+}
+var x = blk()
+blk()
+blk()
+blk()
+blk()
+
+// fun map(a: array, blk: block) @inline {
+//   a = []
+//   for (x in a) {
+//     a[it_index] = blk(x)
+//   }
+//   return a
+// }
+
+// my_list = map(a) { it + 1 }
+
+// a = []
+// for (it in a) {
+//   a[it_index] = it + 1
+// }
+// my_list = a
 
 // print(things(5, 6))
 // things("asd", "asd")

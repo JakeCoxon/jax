@@ -51,6 +51,8 @@ void typecheckInit(Parser *parser) {
     parser->typesByName["voidptr"] = parser->types.back();
     parser->types.push_back(types::Array);
     parser->typesByName["array"] = parser->types.back();
+    parser->types.push_back(types::Lambda);
+    parser->typesByName["lambda"] = parser->types.back();
 }
 
 void typecheckPop(Parser *parser) {
@@ -99,15 +101,36 @@ Type typecheckVarDeclaration(Parser *parser, Type type, bool initialize) {
     }
     Local &local = parser->compiler->locals.back();
     local.type = type;
-    if (parser->isBytecode) {
-        // Only static bytecode variables have a slot size
-        local.stackOffset = parser->compiler->nextStackSlot;
-        // TODO: This doesn't actually work for blocks. because
-        // it never reduces? It should add from previous local
-        // I think
-        parser->compiler->nextStackSlot += slotSizeOfType(type);
+    
+    // Only static bytecode variables need a slot size but for convenience
+    // we put a stackOffset on all variables, but only static variables
+    // increase the offset, non-static variables will just equal the
+    // previous local's stackOffset, this is so we can avoid searching
+    // back through the locals list for a static.
+    local.stackOffset = 0;
+    if (parser->compiler->locals.size() > 1) {
+        Local &prevLocal = parser->compiler->locals[parser->compiler->locals.size() - 2];
+        local.stackOffset = prevLocal.stackOffset;
+        if (prevLocal.isStatic) {
+            local.stackOffset += slotSizeOfType(prevLocal.type);
+        }
     }
     return type;
+}
+
+void typecheckLambda(Parser *parser) {
+    parser->compiler->expressionTypeStack.push_back(types::Lambda);
+}
+void typecheckCallLambda(Parser *parser) {
+    assert(parser->compiler->expressionTypeStack.size());
+    Type backType = parser->compiler->expressionTypeStack.back();
+
+    // types::Lambda is effectively a function that hasn't been
+    // instantiated yet. Let's see if this type should extend to
+    // regular functions too.
+    if (backType != types::Lambda) {
+        parser->error("Can't call this type of expression.");
+    }
 }
 
 void typecheckNil(Parser *parser, Type type) {
@@ -163,19 +186,19 @@ void typecheckNumber(Parser *parser) {
 
 void typecheckArrayAccess(Parser *parser) {
     Type indexType = parser->compiler->expressionTypeStack.back();
+    parser->compiler->expressionTypeStack.pop_back();
     if (!typecheckIsAssignable(parser, indexType, types::Number)) {
         parser->error("Can only index with a number.");
         return;
     }
-    parser->compiler->expressionTypeStack.pop_back();
 
     Type arrayType = parser->compiler->expressionTypeStack.back();
+    parser->compiler->expressionTypeStack.pop_back();
     if (!arrayType->isArray()) {
         parser->error("Can only index an array.");
         return;
     }
 
-    parser->compiler->expressionTypeStack.pop_back();
 
     parser->compiler->expressionTypeStack.push_back(arrayType->arrayTypeData()->elementType);
 }
@@ -281,7 +304,7 @@ void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, T
     function->type = functionType;
     functionTypeObj->returnType = returnType;
     // if (returnType != TypeId::Void) {
-        function->returnSlots = 2; // :EverythingDouble
+    function->returnSlots = slotSizeOfType(returnType);
     // } else {
     //     function->returnSlots = 0;
     // }

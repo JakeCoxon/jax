@@ -50,12 +50,14 @@ struct ArrayLiteral {
     Expr **elements;
     int numElements;
 };
+struct Unit {
+};
 
 struct Expr {
     Type type;
 
     mpark::variant<FunctionCall, FunctionCallNative, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
-        BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral, TypeLiteral> variant;
+        BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral, TypeLiteral, Unit> variant;
 };
 
 struct FunDeclaration {
@@ -121,6 +123,7 @@ struct AstGen {
 
     Parser *parser = nullptr;
     Declaration *initialDeclaration = nullptr;
+    Declaration *lastDeclaration = nullptr;
 
     AstGen() {
         nextDeclarationStack.push_back(&initialDeclaration);
@@ -161,6 +164,12 @@ struct AstGen {
         auto b = makeVariant<BooleanLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
         b->value = value;
+        expressionStack.push_back(expr);
+    }
+    void unit() {
+        auto expr = new Expr;
+        auto b = makeVariant<Unit>(expr);
+        expr->type = parser->compiler->expressionTypeStack.back();
         expressionStack.push_back(expr);
     }
 
@@ -254,6 +263,7 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto exprStmt = makeVariant<ExprStatement>(stmt);
         exprStmt->expr = popExpression();
+        lastDeclaration = decl;
 
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
@@ -264,6 +274,7 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto retStmt = makeVariant<ReturnStatement>(stmt);
         retStmt->expr = isNil ? nullptr : popExpression();
+        lastDeclaration = decl;
 
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
@@ -274,6 +285,7 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto ifStmt = makeVariant<IfStatement>(stmt);
         ifStmt->expr = popExpression();
+        lastDeclaration = decl;
 
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
@@ -290,6 +302,7 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto whileStmt = makeVariant<WhileStatement>(stmt);
         whileStmt->expr = popExpression();
+        lastDeclaration = decl;
 
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
@@ -302,7 +315,8 @@ struct AstGen {
         varDecl->name = name;
         varDecl->value = initializer ? popExpression() : nullptr;
         varDecl->type = type;
-        declarationStack.push_back(decl);
+        lastDeclaration = decl;
+        // declarationStack.push_back(decl);
 
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
@@ -313,7 +327,8 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto print = makeVariant<PrintStatement>(stmt);
         print->argument = popExpression();
-        declarationStack.push_back(decl);
+        // declarationStack.push_back(decl);
+        lastDeclaration = decl;
 
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
@@ -323,7 +338,8 @@ struct AstGen {
         auto decl = new Declaration;
         auto stmt = makeVariant<Statement>(decl);
         auto block = makeVariant<Block>(stmt);
-        declarationStack.push_back(decl);
+        // declarationStack.push_back(decl);
+        lastDeclaration = decl;
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
         nextDeclarationStack.push_back(&block->firstDeclaration);
@@ -337,8 +353,8 @@ struct AstGen {
         auto decl = new Declaration;
         auto func = makeVariant<FunDeclaration>(decl);
         functionInstantiations.push_back({func, inst});
-
-        declarationStack.push_back(decl);
+        lastDeclaration = decl;
+        // declarationStack.push_back(decl);
         *nextDeclarationStack.back() = decl;
         nextDeclarationStack.back() = &decl->nextSibling;
         nextDeclarationStack.push_back(&func->firstDeclaration);
@@ -351,6 +367,22 @@ struct AstGen {
     void structDeclaration(Type type) {
         assert(type->isStruct());
         structDeclarations.push_back(type);
+    }
+
+    void makeLambda() {
+        // For now just put nothing, but eventually we probably
+        // want to remove the last declaration, and if it's an
+        // expression statement put the expression on the stack
+        // Is there another way, instead of rewriting - never
+        // actually write the final declaration, but return it
+        // to the compiler so it can be pushed directly.
+        unit();
+
+
+        // auto stmt = mpark::get_if<Statement>(lastDeclaration.variant);
+        // if (!stmt) return;
+        // auto expr = mpark::get_if<Statement>(lastDeclaration.variant);
+        // if ()
     }
 };
 
@@ -468,6 +500,7 @@ struct CodeGen {
             [&](TypeLiteral &ty) {
                 addTypeName(ty.type);
             },
+            [&](Unit &u) {},
             [&](FunctionCall &call) {
                 ss << call.functionDeclaration->name;
                 ss << "(";

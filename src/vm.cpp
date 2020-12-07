@@ -135,8 +135,10 @@ namespace types {
     const Type Function = new TypeData{6, PrimitiveTypeData{"function"}};
     const Type VoidPtr  = new TypeData{7, PrimitiveTypeData{"voidptr"}};
     const Type Array    = new TypeData{8, PrimitiveTypeData{"array"}};
+    const Type Lambda   = new TypeData{8, PrimitiveTypeData{"lambda"}};
 }
 
+struct FunctionDeclaration;
 
 struct ObjFunction: Obj {
     int arity = 0;
@@ -145,6 +147,8 @@ struct ObjFunction: Obj {
     Type type = types::Void;
     int argSlots = -1;
     int returnSlots = -1;
+
+    FunctionDeclaration *functionDeclaration = nullptr;
 
     ObjFunction() {}
 };

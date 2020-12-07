@@ -134,7 +134,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    FunctionInstantiation *getInstantiationFromStack(FunctionDeclaration *functionDeclaration, int argCount);
+    FunctionInstantiation *getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount);
     void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
     FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
 
@@ -175,6 +175,7 @@ struct Parser {
     void or_(ExpressionState es);
     void dot(ExpressionState es);
     void lambda(ExpressionState es);
+    void callLambda(ExpressionState es);
     uint8_t argumentList(FunctionDeclaration *functionDeclaration);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
@@ -482,7 +483,7 @@ ObjFunction *Parser::endCompiler() {
     return function;
 }
 
-FunctionInstantiation *Parser::getInstantiationFromStack(FunctionDeclaration *functionDeclaration, int argCount) {
+FunctionInstantiation *Parser::getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount) {
     // slow as hell
     for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
         auto inst = &functionDeclaration->overloads[j];
@@ -510,8 +511,9 @@ FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *function
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
     // TODO: Garbage collection
-    compiler->function->name = new ObjString(std::string(functionDeclaration->name));
-    compiler->function->arity = functionDeclaration->parameters.size();
+    newFunction->name = new ObjString(std::string(functionDeclaration->name));
+    newFunction->arity = functionDeclaration->parameters.size();
+    newFunction->functionDeclaration = functionDeclaration;
 
     compiler->compiled = true; // Mark this so we don't recurse
 
@@ -664,7 +666,7 @@ void Parser::staticDeclaration() {
     isBytecode = true;
     declaration();
 
-    vmWriter->run();
+    vmWriter->vm.run();
 
     isBytecode = false;
 
@@ -889,7 +891,7 @@ void Parser::funDeclaration() {
     auto name = previous().text;
     auto function = new ObjFunction();
     Compiler *enclosingCompiler = compiler;
-    Compiler *functionCompiler = new Compiler(function, CompilerType::Function, compiler);
+    Compiler *functionCompiler = new Compiler(function, CompilerType::Function, enclosingCompiler);
     uint16_t constant = makeConstant(function);
     // int functionType = typecheckFunctionDeclaration(this, function);
     // initCompiler(functionCompiler);
@@ -932,7 +934,7 @@ void Parser::funDeclaration() {
     // typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
 
-    auto decl = new FunctionDeclaration;
+    auto decl = new FunctionDeclaration; // @leak
     decl->name = name;
     decl->parameters = parameters;
     decl->returnType = returnType;
@@ -958,6 +960,7 @@ void Parser::funDeclaration() {
 
     consume(TokenType::LeftBrace, "Expect '{' before function body.");
 
+    // Must be AFTER the left brace
     decl->blockStart = scanner->start;
     decl->blockLine = scanner->line;
 
@@ -1350,6 +1353,49 @@ void Parser::dot(ExpressionState es) {
 }
 
 void Parser::lambda(ExpressionState es) {
+    if (!isBytecode) {
+        error("Not supported yet");
+        return;
+    }
+
+    auto function = new ObjFunction();
+    Compiler *enclosingCompiler = compiler;
+    Compiler *functionCompiler = new Compiler(function, CompilerType::Function, enclosingCompiler);
+    uint16_t constant = makeConstant(function);
+
+    std::vector<FunctionParameter> parameters;
+
+    auto decl = new FunctionDeclaration; // @leak
+    decl->name = "lambda";
+    decl->parameters = parameters;
+    decl->returnType = types::Void;
+    decl->polymorphic = true;
+    decl->enclosingCompiler = enclosingCompiler;
+    decl->isExtern = false;
+    decl->constant = constant;
+
+    function->functionDeclaration = decl;
+
+    consume(TokenType::LeftBrace, "Expect '{' after 'block'.");
+
+    // Must be AFTER the left brace
+    decl->blockStart = scanner->start;
+    decl->blockLine = scanner->line;
+
+    int braces = 0;
+    while ((braces > 0 || !check(TokenType::RightBrace)) && !check(TokenType::EOF_)) {
+        if (match(TokenType::LeftBrace)) braces ++;
+        else if (match(TokenType::RightBrace)) braces --;
+        else advance();
+    }
+    consume(TokenType::RightBrace, "Expect '}' after block");
+
+    vmWriter->emitConstant(constant);
+    // typecheckFunctionDeclaration(this, function /* not used */);
+    // typecheckFunctionDeclarationReturn(this, function, )
+    typecheckLambda(this);
+
+    // expression();
     // consume(TokenType::LeftBrace, "Expect property name after '.'.");
     // Token property = previous();
     // // uint8_t name = identifierConstant(previous().text);
@@ -1390,7 +1436,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
 
     uint8_t argCount = argumentList(functionDeclaration);
 
-    auto inst = getInstantiationFromStack(functionDeclaration, argCount);
+    auto inst = getInstantiationByStackArguments(functionDeclaration, argCount);
     if (!inst) {
         inst = createInstantiation(functionDeclaration);
         typecheckInstantiationAgainstStack(this, inst, argCount);
@@ -1403,16 +1449,84 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     else ast->functionCall(*inst, argCount);
 }
 
+void Parser::callLambda(ExpressionState es) {
+    if (isBytecode) {
+        error("Not supported yet.");
+        return;
+    }
+
+    // No arguments for now
+    consume(TokenType::RightParen, "Expect ')' after argument list.");
+
+    // To call this lambda we need to retreive it from the VM
+    // and compile it.
+
+    typecheckCallLambda(this);
+
+    vmWriter->vm.run();
+    ObjFunction &function = vmWriter->vm.peek<Value>().asFunction();
+    FunctionDeclaration *funDecl = function.functionDeclaration;
+
+    Compiler *initialCompiler = this->compiler;
+    Scanner *initialScanner = this->scanner;
+
+    Compiler *compiler = new Compiler(&function, CompilerType::Function, funDecl->enclosingCompiler);
+
+    this->compiler = compiler;
+
+    Scanner tempScanner { initialScanner->source };
+    scanner = &tempScanner;
+
+    scanner->current = funDecl->blockStart;
+    scanner->start = funDecl->blockStart;
+    scanner->line = funDecl->blockLine;
+    scanner->parens = 0;
+    advance();
+    
+    block();
+
+    // Reset back
+    this->scanner = initialScanner;
+    this->compiler = initialCompiler;
+
+
+    ast->makeLambda();
+
+}
+
 void Parser::variable(ExpressionState es) {
     namedVariable(previous().text, es);
 }
 
 void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     Token nameToken = previous();
+
+    int arg = compiler->resolveLocal(name);
+    if (arg == -2) {
+        error("Can't read local variable in its own initializer.");
+    }
+    if (arg != -1) {
+        typecheckVariable(this, arg);
+        Local &local = compiler->locals[arg];
+        if (!isBytecode) {
+            if (local.isStatic) vmWriter->namedVariable(arg, false);
+            else ast->variable(nameToken);
+        }
+
+        if (es.canAssign && match(TokenType::Equal)) {
+            expression();
+            typecheckAssignExpression(this);
+            if (isBytecode) vmWriter->namedVariable(arg, true);
+            else ast->assignment();
+        } else {
+            if (isBytecode) vmWriter->namedVariable(arg, false);
+        }
+        return;
+    }
+    
     FunctionDeclaration *functionDeclaration = compiler->resolveFunctionDeclaration(name);
 
     if (functionDeclaration != nullptr) {
-        
         if (es.canAssign && match(TokenType::Equal)) {
             error("Cannot assign to a function.");
             return;
@@ -1423,32 +1537,14 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
         } else {
             error("Cannot reference function without calling it (yet).");
         }
-    } else {
-        
-        int arg = compiler->resolveLocal(name);
-        if (arg == -2) {
-            error("Can't read local variable in its own initializer.");
-        }
-        if (arg != -1) {
-            typecheckVariable(this, arg);
-            if (!isBytecode) ast->variable(nameToken);
-
-            if (es.canAssign && match(TokenType::Equal)) {
-                expression();
-                typecheckAssignExpression(this);
-                if (isBytecode) vmWriter->namedVariable(arg, true);
-                else ast->assignment();
-            } else {
-                if (isBytecode) vmWriter->namedVariable(arg, false);
-            }
-        } else {
-            error("No variable found.");
-        }
+        return;
     }
+
+    error("No variable found.");
 }
 
 ParseRule rules[] = {
-    {&Parser::grouping, nullptr,           Precedence::None},       // LeftParen
+    {&Parser::grouping, &Parser::callLambda, Precedence::Call},     // LeftParen
     {nullptr,           nullptr,           Precedence::None},       // RightParen
     {nullptr,           nullptr,           Precedence::None},       // LeftBrace
     {nullptr,           nullptr,           Precedence::None},       // RightBrace
