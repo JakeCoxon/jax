@@ -122,15 +122,16 @@ while i < a.len {
 
 static var blk = block {
   print("Print something")
+  200
 }
 static var my_cool_blk: lambda
 static if 123 > 20 {
   my_cool_blk = blk
 }
 // Inlines the lambda contents
-my_cool_blk()
-my_cool_blk()
-my_cool_blk()
+var m1 = my_cool_blk()
+var m2 = my_cool_blk()
+print(m1 + m2)
 
 // run(my_cool_blk)
 

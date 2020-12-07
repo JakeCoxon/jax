@@ -45,63 +45,64 @@ FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *function
 
 void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     
-    Compiler *initialCompiler = this->compiler;
-    Scanner *initialScanner = this->scanner;
     FunctionDeclaration *functionDeclaration = functionInst.declaration;
     ObjFunction* newFunction = &functionInst.function.asFunction();
     Type functionType = functionInst.type;
-    auto functionTypeObj = functionType->functionTypeData();
-    Compiler *compiler = functionInst.compiler;
 
     if (functionDeclaration->isExtern) {
-        typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
-    } else {
+        typecheckFunctionDeclarationReturnValue(this, newFunction, functionType, functionDeclaration->returnType);
+        return;
+    } 
+
+    Compiler *initialCompiler = this->compiler;
+    Scanner *initialScanner = this->scanner;
+    auto functionTypeObj = functionType->functionTypeData();
+    Compiler *compiler = functionInst.compiler;
         
-        beginScope();
-        ast->beginFunctionDeclaration(functionInst);
-        
-        this->compiler = compiler;
-
-        // I don't think we want to push the current function/top level script on the stack anymore
-        // compiler->locals.push_back(Local("", 0, 0)); // Function object
-        // compiler->nextStackSlot += 2;
-
-        newFunction->argSlots = 0;
-        for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-            compiler->declareVariable(this, functionDeclaration->parameters[i].name);
-            compiler->markInitialized();
-
-            Local &local = compiler->locals.back();
-            local.type = functionTypeObj->parameterTypes[i];
-            
-            // TODO: bytecode only
-            local.stackOffset = compiler->nextStackSlot;
-            int slotSize = slotSizeOfType(local.type);
-            compiler->nextStackSlot += slotSize;
-            newFunction->argSlots += slotSize;
-        }
-
-        typecheckFunctionDeclarationReturn(this, newFunction, functionType, functionDeclaration->returnType);
+    beginScope();
+    ast->beginFunctionDeclaration(functionInst);
     
-        
-        
-        Scanner tempScanner { initialScanner->source };
-        scanner = &tempScanner;
+    this->compiler = compiler;
 
-        scanner->current = functionDeclaration->blockStart;
-        scanner->start = functionDeclaration->blockStart;
-        scanner->line = functionDeclaration->blockLine;
-        scanner->parens = 0;
-        advance();
-        
-        block();
-        ast->endFunctionDeclaration();
-        endCompiler();
+    // I don't think we want to push the current function/top level script on the stack anymore
+    // compiler->locals.push_back(Local("", 0, 0)); // Function object
+    // compiler->nextStackSlot += 2;
 
-        // Reset back
-        this->scanner = initialScanner;
-        this->compiler = initialCompiler;
+    newFunction->argSlots = 0;
+    for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
+        compiler->declareVariable(this, functionDeclaration->parameters[i].name);
+        compiler->markInitialized();
+
+        Local &local = compiler->locals.back();
+        local.type = functionTypeObj->parameterTypes[i];
+        
+        // TODO: bytecode only
+        local.stackOffset = compiler->nextStackSlot;
+        int slotSize = slotSizeOfType(local.type);
+        compiler->nextStackSlot += slotSize;
+        newFunction->argSlots += slotSize;
     }
+
+    typecheckFunctionDeclarationReturnValue(this, newFunction, functionType, functionDeclaration->returnType);
+
+    
+    
+    Scanner tempScanner { initialScanner->source };
+    scanner = &tempScanner;
+
+    scanner->current = functionDeclaration->blockStart;
+    scanner->start = functionDeclaration->blockStart;
+    scanner->line = functionDeclaration->blockLine;
+    scanner->parens = 0;
+    advance();
+    
+    block();
+    ast->endFunctionDeclaration();
+    endCompiler();
+
+    // Reset back
+    this->scanner = initialScanner;
+    this->compiler = initialCompiler;
 
 }
 
@@ -151,7 +152,6 @@ void Parser::funDeclaration() {
         consume(TokenType::Identifier, "Expect type name after ':'.");
         returnType = typeByName(this, previous().text);
     }
-    // typecheckFunctionDeclarationReturn(this, function, functionType, returnType);
 
 
     auto decl = new FunctionDeclaration; // @leak
@@ -207,10 +207,6 @@ void Parser::lambda(ExpressionState es) {
     auto function = new ObjFunction(); // @leak
     function->name = new ObjString("lambda"); // @leak
 
-    Compiler *enclosingCompiler = compiler;
-    Compiler *functionCompiler = new Compiler(function, CompilerType::Function, enclosingCompiler);
-    uint16_t constant = makeConstant(function);
-
     std::vector<FunctionParameter> parameters;
 
     auto decl = new FunctionDeclaration; // @leak
@@ -218,9 +214,9 @@ void Parser::lambda(ExpressionState es) {
     decl->parameters = parameters;
     decl->returnType = types::Void;
     decl->polymorphic = true;
-    decl->enclosingCompiler = enclosingCompiler;
+    decl->enclosingCompiler = this->compiler;
     decl->isExtern = false;
-    decl->constant = constant;
+    decl->constant = makeConstant(function);
 
     function->functionDeclaration = decl;
 
@@ -238,9 +234,9 @@ void Parser::lambda(ExpressionState es) {
     }
     consume(TokenType::RightBrace, "Expect '}' after block");
 
-    vmWriter->emitConstant(constant);
+    vmWriter->emitConstant(decl->constant);
     // typecheckFunctionDeclaration(this, function /* not used */);
-    // typecheckFunctionDeclarationReturn(this, function, )
+    // typecheckFunctionDeclarationReturnValue(this, function, )
     typecheckLambda(this);
 
     // expression();
@@ -303,9 +299,10 @@ void Parser::callLambda(ExpressionState es) {
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
 
-    Compiler *compiler = new Compiler(&function, CompilerType::Function, funDecl->enclosingCompiler);
+    Compiler *newCompiler = new Compiler(&function, CompilerType::Function, funDecl->enclosingCompiler);
+    newCompiler->hasImplicitReturn = true;
 
-    this->compiler = compiler;
+    this->compiler = newCompiler;
 
     Scanner tempScanner { initialScanner->source };
     scanner = &tempScanner;
@@ -322,7 +319,8 @@ void Parser::callLambda(ExpressionState es) {
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
 
-
+    compiler->expressionTypeStack.pop_back();
+    compiler->expressionTypeStack.push_back(newCompiler->implicitReturnType);
     ast->makeLambda();
 
 }

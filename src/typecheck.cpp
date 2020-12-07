@@ -299,7 +299,7 @@ Type typecheckFunctionDeclaration(Parser *parser, ObjFunction *function) {
     return parser->types.back();
 }
 
-void typecheckFunctionDeclarationReturn(Parser *parser, ObjFunction *function, Type functionType, Type returnType) {
+void typecheckFunctionDeclarationReturnValue(Parser *parser, ObjFunction *function, Type functionType, Type returnType) {
     auto functionTypeObj = functionType->functionTypeData();
     function->type = functionType;
     functionTypeObj->returnType = returnType;

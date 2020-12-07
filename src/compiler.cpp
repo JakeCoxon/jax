@@ -182,6 +182,9 @@ struct Compiler {
     int nextStackSlot = 0;
     bool compiled = false;
 
+    Type implicitReturnType = nullptr;
+    bool hasImplicitReturn = false;
+
     Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
             : function(function), type(type), enclosing(enclosing) {
     }
@@ -599,6 +602,12 @@ void Parser::staticDeclaration() {
 }
 
 void Parser::statement() {
+    // We don't know which statement is the last so every
+    // statement resets this type and expressionStatement
+    // will set it, leaving the last one as the correct type.
+    // Performance could suffer doing it this way?
+    compiler->implicitReturnType = nullptr;
+    
     if (match(TokenType::Print)) {
         printStatement();
     } else if (match(TokenType::If)) {
@@ -669,6 +678,8 @@ void Parser::expressionStatement() {
 
     if (isBytecode) vmWriter->exprStatement();
     else ast->exprStatement();
+
+    compiler->implicitReturnType = compiler->expressionTypeStack.back();
     typecheckEndStatement(this);
 }
 
