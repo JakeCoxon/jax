@@ -115,6 +115,12 @@ T *makeVariant(U *decl) {
 }
 
 struct AstGen {
+    // std::array<Declaration, 256> allDecls;
+    // size_t numDecls = 0;
+    // std::array<Expr, 1024> allExprs;
+    // size_t numExprs = 0;
+
+
     std::vector<Expr*> expressionStack;
     std::vector<Declaration*> declarationStack;
     std::vector<Declaration**> nextDeclarationStack;
@@ -131,6 +137,25 @@ struct AstGen {
         nextDeclarationStack.push_back(&initialDeclaration);
     }
 
+    Expr *newExpr() {
+        // if (numExprs > 1024) exit(0);
+        // Expr *expr = &allExprs[numExprs];
+        Expr *expr = new Expr;
+        // numExprs ++;
+        return expr;
+    }
+
+    Declaration *pushNewDeclaration() {
+        // if (numDecls > 256) exit(0);
+        // Declaration *decl = &allDecls[numDecls];
+        Declaration *decl = new Declaration;
+        // numDecls ++;
+        lastDeclaration = decl;
+
+        *nextDeclarationStack.back() = decl;
+        nextDeclarationStack.back() = &decl->nextSibling;
+        return decl;
+    }
 
     Expr *popExpression() {
         assert(expressionStack.size() > 0);
@@ -139,16 +164,17 @@ struct AstGen {
         return expr;
     }
 
+    // Expressions
 
     void string(Token name) {
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto lit = makeVariant<StringLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
         lit->name = name;
         expressionStack.push_back(expr);
     }
     void number(Token name) {
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto lit = makeVariant<NumberLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
         lit->name = name;
@@ -156,28 +182,28 @@ struct AstGen {
     }
     void variable(int localIndex) {
         Local &local = parser->compiler->locals[localIndex];
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto var = makeVariant<VariableLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
         var->name = local.renamedTo.size() ? local.renamedTo : local.name;
         expressionStack.push_back(expr);
     }
     void booleanLiteral(bool value) {
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto b = makeVariant<BooleanLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
         b->value = value;
         expressionStack.push_back(expr);
     }
     void unit() {
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto b = makeVariant<Unit>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
         expressionStack.push_back(expr);
     }
 
     void property(Token property) {
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto prop = makeVariant<PropertyExpr>(expr);
         prop->left = popExpression();
         prop->property = property;
@@ -185,7 +211,7 @@ struct AstGen {
         expressionStack.push_back(expr);
     }
     void assignment() {
-        auto expr = new Expr;
+        auto expr = newExpr();
         auto assgn = makeVariant<AssignmentExpr>(expr);
         assgn->value = popExpression();
         assgn->left = popExpression();
@@ -198,7 +224,7 @@ struct AstGen {
     }
 
     void infix(Token operatorToken) {
-        auto expr = new Expr;
+        auto expr = newExpr();
         Expr *right = popExpression();
         Expr *left = popExpression();
         auto infix = makeVariant<InfixExpr>(expr);
@@ -214,7 +240,7 @@ struct AstGen {
         for (int i = 0; i < argCount; i++) {
             args.insert(args.begin(), 1, popExpression());
         }
-        auto expr = new Expr();
+        auto expr = newExpr();
         expr->type = parser->compiler->expressionTypeStack.back();
         auto call = makeVariant<FunctionCall>(expr);
         call->argCount = argCount;
@@ -227,7 +253,7 @@ struct AstGen {
         for (int i = 0; i < argCount; i++) {
             args.insert(args.begin(), 1, popExpression());
         }
-        auto expr = new Expr();
+        auto expr = newExpr();
         expr->type = parser->compiler->expressionTypeStack.back();
         auto call = makeVariant<FunctionCallNative>(expr);
         call->arguments = args;
@@ -236,7 +262,7 @@ struct AstGen {
     }
 
     void arrayLiteral(int numElements, Type elementType) {
-        auto expr = new Expr();
+        auto expr = newExpr();
         expr->type = parser->compiler->expressionTypeStack.back();
         auto array = makeVariant<ArrayLiteral>(expr);
         array->elementType = elementType;
@@ -253,22 +279,13 @@ struct AstGen {
     }
 
     void typeLiteral(Type type) {
-        auto expr = new Expr();
+        auto expr = newExpr();
         expr->type = parser->compiler->expressionTypeStack.back();
         auto typeLit = makeVariant<TypeLiteral>(expr);
         typeLit->type = type;
         expressionStack.push_back(expr);
     }
     // Declarations
-
-    Declaration *pushNewDeclaration() {
-        auto decl = new Declaration;
-        lastDeclaration = decl;
-
-        *nextDeclarationStack.back() = decl;
-        nextDeclarationStack.back() = &decl->nextSibling;
-        return decl;
-    }
 
     void exprStatement() {
         auto decl = pushNewDeclaration();
@@ -373,7 +390,7 @@ struct AstGen {
             decl = decl->nextSibling;
         }
         assert(lastDeclaration == decl->nextSibling);
-        delete decl->nextSibling;
+        // delete decl->nextSibling; @leak
         decl->nextSibling = nullptr;
 
         nextDeclarationStack.back() = &decl->nextSibling;

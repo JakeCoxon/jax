@@ -13,8 +13,6 @@ std::ostream &operator<<(std::ostream &os, const Value &v);
 #include <variant.hpp>
 #include <visit.hpp>
 
-#define DEBUG_PRINT_CODE
-#define DEBUG_TRACE_EXECUTION
 #define STACK_MAX 256
 #define FRAMES_MAX 64
 #define VALUE_SIZE_SLOTS (sizeof(Value) / sizeof(uint32_t))

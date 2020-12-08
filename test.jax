@@ -120,23 +120,26 @@ while i < a.len {
 //   return 5
 // }
 
-static var blk = block {
-  var i = 0
-  while i < 3 {
-    print("Print something!")
-    i = i + 1
-  }
-  i
-}
 static var my_cool_blk: lambda
-static if 123 > 20 {
-  my_cool_blk = blk
+static {
+  var blk = block {
+    var i = 0
+    while i < 3 {
+      print("Print something!")
+      i = i + 1
+    }
+    i
+  }
+  if 123 > 20 {
+    my_cool_blk = blk
+  }
 }
 // Inlines the lambda contents
 var m1 = my_cool_blk()
 var m2 = my_cool_blk()
 var m3 = my_cool_blk()
-print(m1 + m2 + m3)
+var result = m1 + m2 + m3
+print("result of calling blocks: $result")
 
 // run(my_cool_blk)
 
