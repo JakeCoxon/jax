@@ -64,28 +64,21 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     
     this->compiler = compiler;
 
-    // I don't think we want to push the current function/top level script on the stack anymore
-    // compiler->locals.push_back(Local("", 0, 0)); // Function object
-    // compiler->nextStackSlot += 2;
-
     newFunction->argSlots = 0;
     for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
         compiler->declareVariable(this, functionDeclaration->parameters[i].name);
         compiler->markInitialized();
 
-        Local &local = compiler->locals.back();
-        local.type = functionTypeObj->parameterTypes[i];
-        
-        // TODO: bytecode only
-        local.stackOffset = compiler->nextStackSlot;
-        int slotSize = slotSizeOfType(local.type);
-        compiler->nextStackSlot += slotSize;
-        newFunction->argSlots += slotSize;
+        typecheckVarDeclaration(this, functionTypeObj->parameterTypes[i], false);
+
+        if (isBytecode) {
+            int slotSize = slotSizeOfType(compiler->locals.back().type);
+            newFunction->argSlots += slotSize;
+        }
     }
+    
 
     typecheckFunctionDeclarationReturnValue(this, newFunction, functionType, functionDeclaration->returnType);
-
-    
     
     Scanner tempScanner { initialScanner->source };
     scanner = &tempScanner;
@@ -239,22 +232,6 @@ void Parser::lambda(ExpressionState es) {
     // typecheckFunctionDeclarationReturnValue(this, function, )
     typecheckLambda(this);
 
-    // expression();
-    // consume(TokenType::LeftBrace, "Expect property name after '.'.");
-    // Token property = previous();
-    // // uint8_t name = identifierConstant(previous().text);
-
-    // typecheckPropertyAccess(this, property.text);
-    // ast->property(property);
-  
-    // if (es.canAssign && match(TokenType::Equal)) {
-    //     expression();
-    //     typecheckAssignExpression(this);
-    //     ast->assignment();
-    //     // emitBytes(OP_SET_PROPERTY, name); // TODO:
-    // } else {
-    //     // emitBytes(OP_GET_PROPERTY, name);
-    // }
 }
 
 

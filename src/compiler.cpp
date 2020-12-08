@@ -182,7 +182,6 @@ struct Compiler {
     std::vector<FunctionDeclaration*> functionDeclarations;
 
     int scopeDepth = 0;
-    int nextStackSlot = 0;
     bool compiled = false;
 
     Type implicitReturnType = nullptr;
@@ -225,8 +224,6 @@ void registerNative(
     }
     typeData.returnType = returnType;
     Type type = addNewType(parser, typeData);
-    // parser->types.push_back(type);
-    // int typeId = parser->types.size() - 1;
 
     // TODO: garbage collection
     auto native = new ObjNative{type, nativeFn};
@@ -246,12 +243,6 @@ void registerNative(
     decl->isExtern = true;
     decl->constant = constant;
     decl->overloads = {inst};
-    // decl->blockStart = scanner->start;
-    // decl->blockLine = scanner->line;
-
-    // FunctionDeclaration *decl = new FunctionDeclaration {
-    //     functionName->text, parameters, returnType, false, nullptr, {inst}, 0, 0, 0
-    // };
     parser->compiler->functionDeclarations.push_back(decl);
 }
 
@@ -359,32 +350,6 @@ void Compiler::handleRenames(Parser *parser, Local &newLocal) {
     topLevel->locals.insert(topLevel->locals.begin() + newIndex,
         { newNameView, topLevel->scopeDepth, newStackOffset });
 
-    // bool didRename = inlineCompiler->inlinedFrom->declareVariableDidRename(parser, local.name);
-    // Take the name from the recently added local, whether it did rename or not.
-    // If we renamed the inlined one, that means it will already have the new name.
-    // std::string newName = inlineCompiler->inlinedFrom->locals.back().name;
-    
-
-
-
-    // Compiler *inlineCompiler = this;
-    // Local *foundLocal = nullptr;
-    // while (inlineCompiler->inlinedFrom) {
-    //     inlineCompiler = inlineCompiler->inlinedFrom;
-
-    //     for (int i = inlineCompiler->locals.size() - 1; i >= 0; i--) {
-    //         Local* local = &inlineCompiler->locals[i];
-    //         if (newLocal.name == local->name) {
-    //             foundLocal = local;
-    //             break;
-    //         }
-    //     }
-
-
-    // }
-    // if (foundLocal) {
-    //     newLocal.renamedTo = "generated_fresh_name";
-    // }
 }
 
 void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
@@ -501,10 +466,10 @@ void Parser::errorAt(Token &token, const std::string &message) {
 
 uint16_t Parser::makeConstant(Value value) {
     int constant = currentChunk().addConstant(value);
-    // if (constant > UINT8_MAX) {
-    //     error("Too many constants in one chunk.");
-    //     return 0;
-    // }
+    if (constant > UINT8_MAX) {
+        error("Too many constants in one chunk.");
+        return 0;
+    }
     return (uint16_t)constant;
 }
 
@@ -537,10 +502,6 @@ void Parser::initCompiler(Compiler *compiler) {
     if (compiler->type != CompilerType::Script) {
         compiler->function->name = new ObjString(std::string(previous().text));
     }
-
-    // I don't think we want to push the current function/top level script on the stack anymore
-    // compiler->locals.push_back(Local("", 0, 0));
-    compiler->nextStackSlot = 0;
 
 }
 
