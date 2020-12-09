@@ -112,13 +112,12 @@ while i < a.len {
   i = i + 1
 }
 
-// fun run(blk: lambda): number @inline {
-//   blk()
-//   blk()
-//   blk()
-//   blk()
-//   return 5
-// }
+fun run_four(blk: lambda) @inline {
+  blk()
+  blk()
+  blk()
+  blk()
+}
 
 static var my_cool_blk: lambda
 static {
@@ -135,11 +134,11 @@ static {
   }
 }
 // Inlines the lambda contents
-var m1 = my_cool_blk()
-var m2 = my_cool_blk()
-var m3 = my_cool_blk()
-var result = m1 + m2 + m3
-print("result of calling blocks: $result")
+// var m1 = my_cool_blk()
+// var m2 = my_cool_blk()
+// var m3 = my_cool_blk()
+// var result = m1 + m2 + m3
+// print("result of calling blocks: $result")
 
 // run(my_cool_blk)
 
@@ -191,41 +190,6 @@ fun fib(n): number {
 // var correct = fib(35) == 9227465
 // print("was correct? $correct")
 ////print("{}", fib(3))
-
-// if apple < 10 {
-//  print("apple is less than 10")
-// }
-
-// while banana > 0 {
-//  banana = banana - 1
-//  print(banana)
-// }
-
-// var dyn: dynamic = "thing"
-// print(dyn)
-// dyn = 200
-// print(dyn)
-//
-//
-//{
-//  var x = array()
-//  print("size of {} is {}", x, size(x))
-//
-//  add(x, "hello")
-//  add(x, "this")
-//  add(x, "is")
-//  add(x, "a")
-//  add(x, "test")
-//  print("size of {} is {}", x, size(x))
-//
-//  var i = 0
-//  while i < size(x) {
-//    print("index {} is {}", i, get(x, i))
-//    i = i + 1
-//  }
-//
-//}
-//
 
 var time = clock_seconds() - start
 print("time was $time s")

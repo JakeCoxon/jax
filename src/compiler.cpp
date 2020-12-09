@@ -185,7 +185,6 @@ struct Compiler {
     bool compiled = false;
 
     Type implicitReturnType = nullptr;
-    bool hasImplicitReturn = false;
 
     Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
             : function(function), type(type), enclosing(enclosing) {
@@ -508,15 +507,14 @@ void Parser::initCompiler(Compiler *compiler) {
 
 ObjFunction *Parser::endCompiler() {
 
-    for (size_t i = 0; i < compiler->functionDeclarations.size(); i++) {
-        if (!compiler->functionDeclarations[i]->polymorphic) {
-            if (compiler->functionDeclarations[i]->overloads.size() != 0) {
-                continue;
-            }
-            auto inst = createInstantiation(compiler->functionDeclarations[i]);
-            typecheckInstantiationFromArgumentList(this, inst);
-            compileFunctionInstantiation(*inst);
-        }
+    for (FunctionDeclaration *funDecl : compiler->functionDeclarations) {
+        if (funDecl->polymorphic) continue;
+        if (funDecl->isInline) continue;
+        if (funDecl->overloads.size() != 0) continue;
+        
+        auto inst = createInstantiation(funDecl);
+        typecheckInstantiationFromArgumentList(this, inst);
+        compileFunctionInstantiation(*inst);
     }
     
     if (isBytecode) vmWriter->endCompiler(); // TODO: Is this ever needed?

@@ -114,6 +114,17 @@ T *makeVariant(U *decl) {
     return &mpark::get<T>(decl->variant);
 }
 
+struct AstBlockScope {
+    AstBlockScope* prevBlock = nullptr;
+
+    Declaration *initialDeclaration = nullptr;
+    Declaration *lastDeclaration = nullptr;
+    Declaration **nextDeclarationPtr = nullptr;
+
+    AstBlockScope(AstBlockScope *prevBlock, Declaration **nextDeclPtr): 
+        prevBlock(prevBlock), nextDeclarationPtr(nextDeclPtr) {}
+};
+
 struct AstGen {
     // std::array<Declaration, 256> allDecls;
     // size_t numDecls = 0;
@@ -122,8 +133,11 @@ struct AstGen {
 
 
     std::vector<Expr*> expressionStack;
-    std::vector<Declaration*> declarationStack;
-    std::vector<Declaration**> nextDeclarationStack;
+    // std::vector<Declaration*> declarationStack;
+    // std::vector<Declaration**> nextDeclarationStack;
+
+    AstBlockScope* currentBlock;
+    // std::vector<AstBlockScope> ;
 
     std::vector<Type> structDeclarations;
 
@@ -131,10 +145,14 @@ struct AstGen {
 
     Parser *parser = nullptr;
     Declaration *initialDeclaration = nullptr;
-    Declaration *lastDeclaration = nullptr;
+
+    // Declaration *lastDeclaration = nullptr;
 
     AstGen() {
-        nextDeclarationStack.push_back(&initialDeclaration);
+        // blockStack.push_back({});
+
+        currentBlock = new AstBlockScope(nullptr, &initialDeclaration);
+
     }
 
     Expr *newExpr() {
@@ -150,10 +168,11 @@ struct AstGen {
         // Declaration *decl = &allDecls[numDecls];
         Declaration *decl = new Declaration;
         // numDecls ++;
-        lastDeclaration = decl;
+        if (!currentBlock->initialDeclaration) { currentBlock->initialDeclaration = decl; }
+        currentBlock->lastDeclaration = decl;
 
-        *nextDeclarationStack.back() = decl;
-        nextDeclarationStack.back() = &decl->nextSibling;
+        *currentBlock->nextDeclarationPtr = decl;
+        currentBlock->nextDeclarationPtr = &decl->nextSibling;
         return decl;
     }
 
@@ -307,11 +326,11 @@ struct AstGen {
         auto ifStmt = makeVariant<IfStatement>(stmt);
         ifStmt->expr = popExpression();
 
-        nextDeclarationStack.push_back(&ifStmt->firstDeclaration);
+        currentBlock = new AstBlockScope(currentBlock, &ifStmt->firstDeclaration);
         return ifStmt;
     }
     void beginElseBlock(IfStatement *ifStmt) {
-        nextDeclarationStack.push_back(&ifStmt->firstElseDeclaration);
+        currentBlock = new AstBlockScope(currentBlock, &ifStmt->firstElseDeclaration);
     }
 
     void beginWhileStatementBlock() {
@@ -319,7 +338,8 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto whileStmt = makeVariant<WhileStatement>(stmt);
         whileStmt->expr = popExpression();
-        nextDeclarationStack.push_back(&whileStmt->firstDeclaration);
+        
+        currentBlock = new AstBlockScope(currentBlock, &whileStmt->firstDeclaration);
     }
     
     void varDeclaration(bool initializer) {
@@ -343,22 +363,26 @@ struct AstGen {
         auto decl = pushNewDeclaration();
         auto stmt = makeVariant<Statement>(decl);
         auto block = makeVariant<Block>(stmt);
-        nextDeclarationStack.push_back(&block->firstDeclaration);
+        currentBlock = new AstBlockScope(currentBlock, &block->firstDeclaration);
     }
     void endBlock() {
-        assert(nextDeclarationStack.size());
-        nextDeclarationStack.pop_back();
+        assert(currentBlock->prevBlock);
+        auto oldBlock = currentBlock;
+        currentBlock = currentBlock->prevBlock;
+        delete oldBlock;
     }
 
     void beginFunctionDeclaration(FunctionInstantiation inst) {
         auto decl = pushNewDeclaration();
         auto func = makeVariant<FunDeclaration>(decl);
         functionInstantiations.push_back({func, inst});
-        nextDeclarationStack.push_back(&func->firstDeclaration);
+        currentBlock = new AstBlockScope(currentBlock, &func->firstDeclaration);
     }
     void endFunctionDeclaration() {
-        assert(nextDeclarationStack.size());
-        nextDeclarationStack.pop_back();
+        assert(currentBlock->prevBlock);
+        auto oldBlock = currentBlock;
+        currentBlock = currentBlock->prevBlock;
+        delete oldBlock;
     }
 
     void structDeclaration(Type type) {
@@ -366,16 +390,17 @@ struct AstGen {
         structDeclarations.push_back(type);
     }
 
-    void makeLambda() {
-        // For now just put nothing, but eventually we probably
-        // want to remove the last declaration, and if it's an
+    void makeImplicitReturn() {
+        // We want to remove the last declaration, and if it's an
         // expression statement put the expression on the stack
         // Is there another way, instead of rewriting - never
         // actually write the final declaration, but return it
         // to the compiler so it can be pushed directly.
-        // unit();
 
-        auto stmt = mpark::get_if<Statement>(&lastDeclaration->variant);
+        // BTW this doesn't work properly if there are nested
+        // blocks at the last position in the function
+
+        auto stmt = mpark::get_if<Statement>(&currentBlock->lastDeclaration->variant);
         if (!stmt) { unit(); return; }
         auto exprStmt = mpark::get_if<ExprStatement>(&stmt->variant);
         if (!exprStmt) { unit(); return; }
@@ -385,15 +410,15 @@ struct AstGen {
 
         // Quick go at removing last element. Maybe doubley linked
         // list in the future? Finds second to last element
-        Declaration *decl = initialDeclaration;
+        Declaration *decl = currentBlock->initialDeclaration;
         while (decl && decl->nextSibling && decl->nextSibling->nextSibling) {
             decl = decl->nextSibling;
         }
-        assert(lastDeclaration == decl->nextSibling);
+        assert(currentBlock->lastDeclaration == decl->nextSibling);
         // delete decl->nextSibling; @leak
         decl->nextSibling = nullptr;
 
-        nextDeclarationStack.back() = &decl->nextSibling;
+        currentBlock->nextDeclarationPtr = &decl->nextSibling;
 
 
     }

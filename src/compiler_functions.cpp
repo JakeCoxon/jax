@@ -278,7 +278,6 @@ void Parser::callLambda(ExpressionState es) {
 
     Compiler *newCompiler = new Compiler(&function, CompilerType::Function, funDecl->enclosingCompiler);
     newCompiler->inlinedFrom = this->compiler;
-    newCompiler->hasImplicitReturn = true;
 
     this->compiler = newCompiler;
 
@@ -299,6 +298,6 @@ void Parser::callLambda(ExpressionState es) {
 
     compiler->expressionTypeStack.pop_back();
     compiler->expressionTypeStack.push_back(newCompiler->implicitReturnType);
-    ast->makeLambda();
+    ast->makeImplicitReturn();
 
 }
