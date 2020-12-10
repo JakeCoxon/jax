@@ -67,9 +67,7 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     newFunction->argSlots = 0;
     for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
         compiler->declareVariable(this, functionDeclaration->parameters[i].name);
-        compiler->markInitialized();
-
-        typecheckVarDeclaration(this, functionTypeObj->parameterTypes[i], false);
+        compiler->markInitialized(functionTypeObj->parameterTypes[i]);
 
         if (isBytecode) {
             int slotSize = slotSizeOfType(compiler->locals.back().type);
@@ -235,8 +233,104 @@ void Parser::lambda(ExpressionState es) {
 }
 
 
+Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl) {
+
+    Compiler *initialCompiler = this->compiler;
+    Scanner *initialScanner = this->scanner;
+
+    // TODO: Any sub-compilers from this point will have
+    // enclosingCompiler = parser->compiler, which will be
+    // the following newCompiler, but the lifetime of this
+    // compiler ends at the end of this scope. This compiler
+    // is inlined so really the enclosingCompiler should be
+    // parser->compiler->inlinedFrom
+    // TODO: Why is function needed here? Why is function
+    // needed in compiler at all? just for bytecode?
+    Compiler newCompiler(function, CompilerType::Function, funDecl->enclosingCompiler);
+    newCompiler.inlinedFrom = this->compiler;
+
+    // Handle function parameters before we switch to the
+    // new compiler. The compiler methods should be written
+    // in a way to not make an assumption on which compiler
+    // is currently active.
+    function->argSlots = 0;
+    for (size_t i = 0; i < funDecl->parameters.size(); i++) {
+        if (i > 0) {
+            consume(TokenType::Comma, "Expected ',' after expression.");
+        }
+        
+        newCompiler.declareVariable(this, funDecl->parameters[i].name);
+        Local &local = newCompiler.locals.back();
+
+        // Maybe not needed because expression happens immediately.
+        if (check(TokenType::RightParen)) {
+            error("Expected argument, this argument is not optional.");
+            break;
+        }
+
+        expression();
+        typecheckFunctionArgument(this, funDecl, i);
+        
+        newCompiler.markInitialized(funDecl->parameters[i].type);
+        typecheckVarDeclarationInitializer(this, local);
+        
+        // Nothing happens the VM - it is just left on the stack
+        if (!isBytecode) {
+            ast->varDeclaration(local, /* initializer */ true);
+        }
+
+        if (isBytecode) {
+            int slotSize = slotSizeOfType(newCompiler.locals.back().type);
+            function->argSlots += slotSize;
+        }
+    }
+    consume(TokenType::RightParen, "Expect ')' after arguments.");
+
+    Scanner tempScanner { initialScanner->source };
+    this->compiler = &newCompiler;
+    this->scanner = &tempScanner;
+    this->scanner->current = funDecl->blockStart;
+    this->scanner->start = funDecl->blockStart;
+    this->scanner->line = funDecl->blockLine;
+    this->scanner->parens = 0;
+    advance();
+
+    block();
+
+    // Reset back
+    this->scanner = initialScanner;
+    this->compiler = initialCompiler;
+
+    return newCompiler.implicitReturnType;
+}
+
+
+uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
+    uint8_t argCount = 0;
+    if (!check(TokenType::RightParen)) {
+        do {
+            expression();
+            if (argCount == 255) {
+                error("Can't have more than 255 arguments.");
+            }
+            typecheckFunctionArgument(this, functionDeclaration, argCount);
+            argCount ++;
+        } while (match(TokenType::Comma));
+    }
+    consume(TokenType::RightParen, "Expect ')' after arguments.");
+    return argCount;
+}
+
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
+    if (functionDeclaration->isInline) {
+        // TODO: Why is funciton needed here?
+        ObjFunction *function = new ObjFunction();
+        inlineFunction(function, functionDeclaration);
+        compiler->expressionTypeStack.push_back(types::Void);
+        ast->unit();
+        return;
+    }
     
     typecheckBeginFunctionCall(this, nullptr);
 
@@ -255,6 +349,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     else ast->functionCall(*inst, argCount);
 }
 
+
 void Parser::callLambda(ExpressionState es) {
     if (isBytecode) {
         error("Not supported yet.");
@@ -262,10 +357,11 @@ void Parser::callLambda(ExpressionState es) {
     }
 
     // No arguments for now
-    consume(TokenType::RightParen, "Expect ')' after argument list.");
+    //consume(TokenType::RightParen, "Expect ')' after argument list.");
 
-    // To call this lambda we need to retreive it from the VM
-    // and compile it.
+    // To call this lambda we need to run the VM to figure out
+    // what the lambda functon object is. weretreive it from
+    // the VM and compile it.
 
     typecheckCallLambda(this);
 
@@ -273,31 +369,11 @@ void Parser::callLambda(ExpressionState es) {
     ObjFunction &function = vmWriter->vm.peek<Value>().asFunction();
     FunctionDeclaration *funDecl = function.functionDeclaration;
 
-    Compiler *initialCompiler = this->compiler;
-    Scanner *initialScanner = this->scanner;
+    Type implicitReturnType = inlineFunction(&function, funDecl);
 
-    Compiler *newCompiler = new Compiler(&function, CompilerType::Function, funDecl->enclosingCompiler);
-    newCompiler->inlinedFrom = this->compiler;
-
-    this->compiler = newCompiler;
-
-    Scanner tempScanner { initialScanner->source };
-    scanner = &tempScanner;
-
-    scanner->current = funDecl->blockStart;
-    scanner->start = funDecl->blockStart;
-    scanner->line = funDecl->blockLine;
-    scanner->parens = 0;
-    advance();
-    
-    block();
-
-    // Reset back
-    this->scanner = initialScanner;
-    this->compiler = initialCompiler;
-
+    assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
     compiler->expressionTypeStack.pop_back();
-    compiler->expressionTypeStack.push_back(newCompiler->implicitReturnType);
+    compiler->expressionTypeStack.push_back(implicitReturnType);
     ast->makeImplicitReturn();
 
 }

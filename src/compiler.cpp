@@ -114,6 +114,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
+    Type inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl);
     FunctionInstantiation *getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount);
     void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
     FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
@@ -194,7 +195,7 @@ struct Compiler {
     FunctionDeclaration *resolveFunctionDeclaration(const std::string_view &name);
     void declareVariable(Parser* parser, const std::string_view& name);
     void handleRenames(Parser *parser, Local &newLocal);
-    void markInitialized();
+    void markInitialized(Type type);
 };
 
 #include "typecheck.cpp"
@@ -371,8 +372,24 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
     handleRenames(parser, locals.back());
 }
 
-void Compiler::markInitialized() {
-    locals.back().depth = scopeDepth;
+void Compiler::markInitialized(Type type) {
+    Local &local = locals.back();
+    local.type = type;
+    local.depth = scopeDepth;
+
+    // Only static bytecode variables need a slot size but for convenience
+    // we put a stackOffset on all variables, but non-static variables will
+    // just equal the previous local's stackOffset. Only bytecode variables
+    // will increase the offset. this is so we can avoid searching back
+    // through the locals list for a static.
+    local.stackOffset = 0;
+    if (locals.size() > 1) {
+        Local &prevLocal = locals[locals.size() - 2];
+        local.stackOffset = prevLocal.stackOffset;
+        if (prevLocal.isStatic) {
+            local.stackOffset += slotSizeOfType(prevLocal.type);
+        }
+    }
 }
 
 Chunk &Parser::currentChunk() { 
@@ -511,7 +528,7 @@ ObjFunction *Parser::endCompiler() {
         if (funDecl->polymorphic) continue;
         if (funDecl->isInline) continue;
         if (funDecl->overloads.size() != 0) continue;
-        
+
         auto inst = createInstantiation(funDecl);
         typecheckInstantiationFromArgumentList(this, inst);
         compileFunctionInstantiation(*inst);
@@ -802,28 +819,27 @@ void Parser::varDeclaration() {
         type = typeByName(this, previous().text);
     }
 
-    bool initializer = false;
+    compiler->locals.back().type = type;
 
+    bool initializer = false;
     if (match(TokenType::Equal)) {
-        initializer = true;
         expression();
-        Type valueType = typecheckVarDeclaration(this, type, true);
-        if (type == types::Void) {
-            type = valueType;
-        }
+        initializer = true;
     } else {
-        Type valueType = typecheckVarDeclaration(this, type, false);
         if (isBytecode) {
             vmWriter->varDeclarationNoValue();
         }
-        // typecheckNil(this, type);
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
-    compiler->markInitialized();
+    compiler->markInitialized(type);
+
+    if (initializer) {
+        typecheckVarDeclarationInitializer(this, compiler->locals.back());
+    }
 
     // Nothing happens the VM - it is just left on the stack
     if (!isBytecode) {
-        ast->varDeclaration(initializer);
+        ast->varDeclaration(compiler->locals.back(), initializer);
     }
 }
 
@@ -1215,23 +1231,6 @@ void Parser::dot(ExpressionState es) {
     } else {
         // emitBytes(OP_GET_PROPERTY, name);
     }
-}
-
-
-uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
-    uint8_t argCount = 0;
-    if (!check(TokenType::RightParen)) {
-        do {
-            expression();
-            if (argCount == 255) {
-                error("Can't have more than 255 arguments.");
-            }
-            typecheckFunctionArgument(this, functionDeclaration, argCount);
-            argCount ++;
-        } while (match(TokenType::Comma));
-    }
-    consume(TokenType::RightParen, "Expect ')' after arguments.");
-    return argCount;
 }
 
 

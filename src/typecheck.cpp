@@ -88,34 +88,15 @@ void typecheckIfCondition(Parser *parser) {
     typecheckPop(parser);
 }
 
-Type typecheckVarDeclaration(Parser *parser, Type type, bool initialize) {
-    if (initialize) {
-        Type initializeType = parser->compiler->expressionTypeStack.back();
-        parser->compiler->expressionTypeStack.pop_back();
-        if (type == types::Void) {
-            type = initializeType;
-        }
-        if (!typecheckIsAssignable(parser, type, initializeType)) {
-            parser->error("Cannot declare a variable with a different type.");
-        }
+void typecheckVarDeclarationInitializer(Parser *parser, Local &local) {
+    Type initializeType = parser->compiler->expressionTypeStack.back();
+    parser->compiler->expressionTypeStack.pop_back();
+    if (local.type == types::Void) {
+        local.type = initializeType;
     }
-    Local &local = parser->compiler->locals.back();
-    local.type = type;
-    
-    // Only static bytecode variables need a slot size but for convenience
-    // we put a stackOffset on all variables, but only static variables
-    // increase the offset, non-static variables will just equal the
-    // previous local's stackOffset, this is so we can avoid searching
-    // back through the locals list for a static.
-    local.stackOffset = 0;
-    if (parser->compiler->locals.size() > 1) {
-        Local &prevLocal = parser->compiler->locals[parser->compiler->locals.size() - 2];
-        local.stackOffset = prevLocal.stackOffset;
-        if (prevLocal.isStatic) {
-            local.stackOffset += slotSizeOfType(prevLocal.type);
-        }
+    if (!typecheckIsAssignable(parser, local.type, initializeType)) {
+        parser->error("Cannot declare a variable with a different type.");
     }
-    return type;
 }
 
 void typecheckLambda(Parser *parser) {

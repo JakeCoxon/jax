@@ -112,11 +112,18 @@ while i < a.len {
   i = i + 1
 }
 
-fun run_four(blk: lambda) @inline {
-  blk()
-  blk()
-  blk()
-  blk()
+// fun run_four(blk: lambda) @inline {
+//   blk()
+//   blk()
+//   blk()
+//   blk()
+// }
+fun run_four(text: string) @inline {
+  print("Calling print 4 times")
+  print(text)
+  print(text)
+  print(text)
+  print(text)
 }
 
 static var my_cool_blk: lambda
@@ -134,13 +141,14 @@ static {
   }
 }
 // Inlines the lambda contents
-// var m1 = my_cool_blk()
-// var m2 = my_cool_blk()
-// var m3 = my_cool_blk()
-// var result = m1 + m2 + m3
-// print("result of calling blocks: $result")
+var m1 = my_cool_blk()
+var m2 = my_cool_blk()
+var m3 = my_cool_blk()
+var result = m1 + m2 + m3
+print("result of calling blocks: $result")
 
-// run(my_cool_blk)
+run_four("hello")
+run_four("hello something more")
 
 // fun map(a: array, blk: block) @inline {
 //   a = []

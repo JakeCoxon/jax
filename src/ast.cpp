@@ -342,9 +342,7 @@ struct AstGen {
         currentBlock = new AstBlockScope(currentBlock, &whileStmt->firstDeclaration);
     }
     
-    void varDeclaration(bool initializer) {
-        Local &local = parser->compiler->locals.back();
-
+    void varDeclaration(Local &local, bool initializer) {
         auto decl = pushNewDeclaration();
         auto varDecl = makeVariant<VarDeclaration>(decl);
         varDecl->name = local.renamedTo.size() ? std::string_view(local.renamedTo) : local.name;
