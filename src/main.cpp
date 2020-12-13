@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdlib.h>
+#include <dirent.h>
 
 
 // #define DEBUG_PRINT_CODE
@@ -42,7 +43,7 @@ std::string readFile(const std::string &path) {
 
 double clock_ms() { return (double)clock() / CLOCKS_PER_SEC * 1000.0; }
 
-static void runFile(const std::string &path) {
+static int runFile(const std::string &path) {
     
     double startTime = clock_ms();
 
@@ -55,29 +56,58 @@ static void runFile(const std::string &path) {
 
     
 
-    if (success) {
+    if (!success) return 1;
+
 #ifdef DEBUG_PRINT_C_CODE
-        std::cout << output.str() << std::endl;
+    std::cout << output.str() << std::endl;
 #endif
 
-        std::ofstream myfile;
-        myfile.open("output.c");
-        myfile << output.str() << endl;
-        myfile.close();
+    std::ofstream myfile;
+    myfile.open("output.c");
+    myfile << output.str() << endl;
+    myfile.close();
 
 
-        int res = system("clang -Wunused-value output.c -o output");
-        double everythingTime = clock_ms() - startTime;
+    int res = system("clang -Wunused-value output.c -o output");
+    double everythingTime = clock_ms() - startTime;
 
-        if (res != 0) return;
+    if (res != 0) return res;
 
-        double startRuntime = clock_ms();
-        system("./output");
-        double runTime = clock_ms() - startRuntime;
-        printf("Compile to c string: %fms\n", compileTime);
-        printf("File op + c compile: %fms\n", (everythingTime - compileTime));
-        printf("           Run time: %fms\n", runTime);
+    double startRuntime = clock_ms();
+    int programResult = system("./output");
+
+    if (programResult != 0) return res;
+
+    double runTime = clock_ms() - startRuntime;
+    printf("Compile to c string: %fms\n", compileTime);
+    printf("File op + c compile: %fms\n", (everythingTime - compileTime));
+    printf("           Run time: %fms\n", runTime);
+
+    return 0;
+}
+
+
+static void runTests() {
+    const char* path = "test";
+    dirent *entry;
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        return;
     }
+
+    int successes = 0;
+    int fails = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+        printf("--- Testing: %s -------------------------\n", entry->d_name);
+        int res = runFile(std::string("test/") + std::string(entry->d_name));
+        if (res == 0) successes ++;
+        else fails ++;
+    }
+
+    closedir(dir);
+
+    printf("%i successes, %i fails\n", successes, fails);
 }
 
 static void repl() {
@@ -101,7 +131,11 @@ int main(int argc, const char* argv[]) {
     if (argc == 1) {
         repl();
     } else if (argc == 2) {
-        runFile(argv[1]);
+        if (strcmp(argv[1], "test") == 0) {
+            runTests();
+        } else {
+            runFile(argv[1]);
+        }
     } else {
         std::cerr << "Usage: jax [path]" << std::endl;
         exit(64);

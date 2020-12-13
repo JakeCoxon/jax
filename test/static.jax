@@ -1,0 +1,25 @@
+fun assert(b: bool) @extern
+
+static {
+  var cool_thing = 1
+  // var i = 1
+  // while i < 10 {
+  //   cool_thing = cool_thing * 2
+  //   i = i + 1
+  // }
+  
+  var cs = clock_seconds()
+
+  print("This is $cs printing at compile time: $cool_thing")
+  add_code("var compile_value = $cool_thing\n")
+  add_code("print(\"compile value is \$compile_value\")\n")
+}
+
+var success = false
+static if 3 > 2 {
+  // TODO: this breaks
+  // add_code("success = true\n")
+  print("Conditionals at compile time")
+}
+
+// assert(success)

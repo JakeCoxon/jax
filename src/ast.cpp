@@ -684,6 +684,8 @@ struct CodeGen {
         ss << "string string_concat(string a, string b) { char *dst = (char*)malloc((strlen(a) + strlen(b)) * sizeof(string)); strcpy(dst, a); strcat(dst, b); return dst; }" << endl;
         ss << "#define _array_index(a, i, type) *(type*)(a.data + (int)i * (int)a.elem_size)" << endl;
         ss << "#define _bool_to_string(b) ((b) ? \"true\" : \"false\")" << endl;
+        ss << "void assert_failed(int line) { printf(\"Assertion failed line %i\\n\", line); exit(1); }" << endl;
+        ss << "#define assert(b) if (!(b)) assert_failed(__LINE__)" << endl;
 
         // TODO: Make this better
         ss << "const char *_make_string(const char *format, ...) {";

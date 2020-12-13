@@ -1,0 +1,27 @@
+fun calloc(num: number, size: number): voidptr @extern
+fun memcpy(dest: voidptr, src: voidptr, size: number): voidptr @extern
+
+struct array_base {
+  elem_size: number
+  data: voidptr
+  len: number
+  cap: number
+}
+fun _new_array_from_literal(len: number, cap: number, elem_size: number, c_array: voidptr): array_base {
+  var a: array_base
+  a.data = calloc(len, elem_size)
+  a.elem_size = elem_size
+  a.len = len
+  a.cap = cap
+  memcpy(a.data, c_array, len * elem_size)
+  return a
+}
+
+var a = [10, 2.22, 33123123.0, 123123, 2.34]
+
+var i = 0
+while i < a.len {
+  var v = a[i]
+  print("iterating: $v")
+  i = i + 1
+}

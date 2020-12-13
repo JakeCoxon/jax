@@ -1,0 +1,87 @@
+
+var start = clock_seconds()
+
+
+var apple = 5
+var banana = 4 + (apple + 2) / 3 - 2
+var thing = @string(indented) "
+        \"jax\" is cool
+        apple = $apple
+        banana = $banana
+"
+
+print("apple is $apple ")
+// print(banana)
+
+// banana = banana - 1
+// print(banana)
+
+// // print(thing == "monkey")
+// // print(thing + "_something")
+
+// print(thing)
+
+// {
+// 	banana = 3
+// }
+
+fun hello(x: number, y: bool, z: string) {
+  print(x)
+  print(y)
+  print(z)
+}
+hello(2, apple < 40, thing)
+
+
+// fun things(a, b): number {
+//   return 123 + a * b
+// }
+
+if true {
+	print("Yes")
+} else {
+	print("Banana")
+}
+
+while banana > 0 {
+  banana = banana - 1
+  print(banana)
+}
+
+struct person {
+  firstname: string
+  lastname: string
+  age: number
+}
+
+var me: person
+me.firstname = "Jake"
+me.lastname = "Someone"
+me.age = 200
+
+var fn = me.firstname
+var ln = me.lastname
+print("fullname is $fn $ln")
+
+
+fun compare(x, y) {
+  if x == y {
+    print("They are the same")
+  }
+}
+compare("hello", "jello")
+
+
+fun fib(n): number {
+ if n < 2 {
+   return n
+ }
+ return fib(n - 2) + fib(n - 1)
+}
+
+var correct = fib(35) == 9227465
+print("was correct? $correct")
+//print("{}", fib(3))
+
+var time = clock_seconds() - start
+print("time was $time s")

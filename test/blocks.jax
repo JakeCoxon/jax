@@ -1,0 +1,57 @@
+fun assert(b: bool) @extern
+
+static var my_cool_blk: lambda
+static {
+  var blk = block {
+    var i = 0
+    while i < 3 {
+      i = i + 1
+    }
+    i
+  }
+  if 123 > 20 {
+    my_cool_blk = blk
+  }
+}
+// Inlines the lambda contents
+var m1 = my_cool_blk()
+var m2 = my_cool_blk()
+var m3 = my_cool_blk()
+var result = m1 + m2 + m3
+assert(result == 9)
+
+
+fun run_four_blk(blk: lambda) @inline {
+  blk()
+  blk()
+  blk()
+  blk()
+}
+
+fun print_four_times(text: string) @inline {
+  print("Calling print 4 times")
+  print(text)
+  print(text)
+  print(text)
+  print(text)
+}
+
+
+
+print_four_times("hello")
+print_four_times("hello something")
+
+static var blk = block {
+  print("inside a block")
+}
+run_four_blk(blk)
+
+run_four_blk(block {
+  print("run this anonymous block 4 times")
+})
+
+// TODO: Scope rules aren't working yet.
+// var result = 0
+// run_four_blk(block {
+//   result = result + 1
+// })
