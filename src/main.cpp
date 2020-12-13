@@ -76,7 +76,7 @@ static int runFile(const std::string &path) {
     double startRuntime = clock_ms();
     int programResult = system("./output");
 
-    if (programResult != 0) return res;
+    if (programResult != 0) return programResult;
 
     double runTime = clock_ms() - startRuntime;
     printf("Compile to c string: %fms\n", compileTime);

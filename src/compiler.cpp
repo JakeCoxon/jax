@@ -630,6 +630,7 @@ void Parser::staticDeclaration() {
         return;
     }
     isBytecode = true;
+
     declaration();
 
     vmWriter->vm.run();
@@ -639,7 +640,9 @@ void Parser::staticDeclaration() {
     if (generatedCodeBuffer.size() > 0) {
         Scanner *initialScanner = this->scanner;
 
-        Scanner tempScanner { generatedCodeBuffer };
+        auto string = new std::string(generatedCodeBuffer); // @leak
+
+        Scanner tempScanner { *string };
         scanner = &tempScanner;
 
         scanner->current = 0;

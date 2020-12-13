@@ -2,11 +2,11 @@ fun assert(b: bool) @extern
 
 static {
   var cool_thing = 1
-  // var i = 1
-  // while i < 10 {
-  //   cool_thing = cool_thing * 2
-  //   i = i + 1
-  // }
+  var i = 1
+  while i < 10 {
+    cool_thing = cool_thing * 2
+    i = i + 1
+  }
   
   var cs = clock_seconds()
 
@@ -18,8 +18,9 @@ static {
 var success = false
 static if 3 > 2 {
   // TODO: this breaks
-  // add_code("success = true\n")
+  add_code("success = true\n")
   print("Conditionals at compile time")
 }
 
-// assert(success)
+assert(success)
+assert(compile_value == 512)
