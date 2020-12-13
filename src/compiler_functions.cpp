@@ -67,7 +67,8 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     newFunction->argSlots = 0;
     for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
         compiler->declareVariable(this, functionDeclaration->parameters[i].name);
-        compiler->markInitialized(functionTypeObj->parameterTypes[i]);
+        compiler->locals.back().type = functionTypeObj->parameterTypes[i];
+        compiler->markInitialized();
 
         if (isBytecode) {
             int slotSize = slotSizeOfType(compiler->locals.back().type);
@@ -131,6 +132,9 @@ void Parser::funDeclaration() {
             // typecheckParameter(this, function, functionType, argumentType);
 
             parameters.push_back({ parameterName, argumentType });
+            if (argumentType == types::Lambda) {
+                parameters.back().isStatic = true;
+            }
             if (argumentType == types::Unknown) {
                 polymorphic = true;
             }
@@ -190,10 +194,11 @@ void Parser::funDeclaration() {
 
 
 void Parser::lambda(ExpressionState es) {
-    if (!isBytecode) {
-        error("Not supported yet");
-        return;
-    }
+    // This must be a static variable
+    // if (!isBytecode) {
+    //     error("Not supported yet");
+    //     return;
+    // }
 
     auto function = new ObjFunction(); // @leak
     function->name = new ObjString("lambda"); // @leak
@@ -248,6 +253,7 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     // needed in compiler at all? just for bytecode?
     Compiler newCompiler(function, CompilerType::Function, funDecl->enclosingCompiler);
     newCompiler.inlinedFrom = this->compiler;
+    newCompiler.nextStackOffset = this->compiler->nextStackOffset;
 
     // Handle function parameters before we switch to the
     // new compiler. The compiler methods should be written
@@ -261,6 +267,7 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
         
         newCompiler.declareVariable(this, funDecl->parameters[i].name);
         Local &local = newCompiler.locals.back();
+        local.isStatic = funDecl->parameters[i].isStatic;
 
         // Maybe not needed because expression happens immediately.
         if (check(TokenType::RightParen)) {
@@ -271,15 +278,14 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
         expression();
         typecheckFunctionArgument(this, funDecl, i);
         
-        newCompiler.markInitialized(funDecl->parameters[i].type);
+        local.type = funDecl->parameters[i].type;
+        newCompiler.markInitialized();
         typecheckVarDeclarationInitializer(this, local);
         
         // Nothing happens the VM - it is just left on the stack
-        if (!isBytecode) {
+        if (!local.isStatic) {
             ast->varDeclaration(local, /* initializer */ true);
-        }
-
-        if (isBytecode) {
+        } else {
             int slotSize = slotSizeOfType(newCompiler.locals.back().type);
             function->argSlots += slotSize;
         }
@@ -287,19 +293,25 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     consume(TokenType::RightParen, "Expect ')' after arguments.");
 
     Scanner tempScanner { initialScanner->source };
+    tempScanner.current = funDecl->blockStart;
+    tempScanner.start = funDecl->blockStart;
+    tempScanner.line = funDecl->blockLine;
+    tempScanner.parens = 0;
     this->compiler = &newCompiler;
     this->scanner = &tempScanner;
-    this->scanner->current = funDecl->blockStart;
-    this->scanner->start = funDecl->blockStart;
-    this->scanner->line = funDecl->blockLine;
-    this->scanner->parens = 0;
     advance();
 
     block();
 
+    // We have to pop the bytecode variables that have been introduced
+    // during this inline because they are on a shared stack. This will
+    // include parameters - is that okay?
+    endScope();
+
     // Reset back
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
+
 
     return newCompiler.implicitReturnType;
 }
@@ -372,7 +384,16 @@ void Parser::callLambda(ExpressionState es) {
     Type implicitReturnType = inlineFunction(&function, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
-    compiler->expressionTypeStack.pop_back();
+
+    // Bit of a hack - the lambda we are calling is on the stack and
+    // we need to clean it up, we know for sure we won't use it again
+    // because we aren't in bytecode mode, so we can pop it immediately,
+    // However this is because the user can just refer to static locals
+    // directly in non-bytecode mode. If the user refers but doesn't use
+    // it in a function call it should be handled - error or cleaned up.
+    vmWriter->exprStatement();
+
+    compiler->expressionTypeStack.pop_back(); // the lambda itself
     compiler->expressionTypeStack.push_back(implicitReturnType);
     ast->makeImplicitReturn();
 

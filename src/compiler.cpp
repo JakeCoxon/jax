@@ -40,6 +40,7 @@ struct Compiler;
 struct FunctionParameter {
     std::string_view name;
     Type type;
+    bool isStatic = false;
 };
 
 struct FunctionDeclaration;
@@ -176,13 +177,14 @@ struct Parser {
 struct Compiler {
     ObjFunction *function;
     CompilerType type;
-    Compiler *enclosing;
-    Compiler *inlinedFrom;
+    Compiler *enclosing = nullptr;
+    Compiler *inlinedFrom = nullptr;
     std::vector<Local> locals;
     std::vector<Type> expressionTypeStack;
     std::vector<FunctionDeclaration*> functionDeclarations;
 
     int scopeDepth = 0;
+    int nextStackOffset = 0;
     bool compiled = false;
 
     Type implicitReturnType = nullptr;
@@ -195,7 +197,7 @@ struct Compiler {
     FunctionDeclaration *resolveFunctionDeclaration(const std::string_view &name);
     void declareVariable(Parser* parser, const std::string_view& name);
     void handleRenames(Parser *parser, Local &newLocal);
-    void markInitialized(Type type);
+    void markInitialized();
 };
 
 #include "typecheck.cpp"
@@ -303,12 +305,7 @@ FunctionDeclaration *Compiler::resolveFunctionDeclaration(const std::string_view
 }
 
 void Compiler::handleRenames(Parser *parser, Local &newLocal) {
-    // Check if we need to rename a variable due to inlining.
-    // Is this nicer as a recursive function, maybe to declareVariable????
-
-    if (!parser->compiler->inlinedFrom) return;
-
-    Compiler *topLevel = parser->compiler->inlinedFrom;
+    Compiler *topLevel = inlinedFrom;
     while (topLevel->inlinedFrom) {
         topLevel = topLevel->inlinedFrom;
     }
@@ -337,9 +334,10 @@ void Compiler::handleRenames(Parser *parser, Local &newLocal) {
 
     // Add a new local that shouldn't be touched (Ensure this somehow).
     // This makes it so multiple inlines of the same function will be correctly
-    // renamed, and it will make sure any variables of this name *later in the
-    // original function* will be correctly renamed. This local should have the
-    // correct scopeDepth so it will be destroyed at the end of the scope.
+    // renamed, and in addition will make sure any variables of this name *later
+    // in the original function* will be correctly renamed. This local should have
+    // the correct scopeDepth so it will be destroyed at the end of the scope.
+    // (Bu they will need to stay until the end of the scope).
     // This local should be before any uninitialised local, to maintain the
     // correct ordering of locals, plus then markInitialized can just read the top
     int newIndex = topLevel->locals.size();
@@ -369,26 +367,26 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
     }
     locals.push_back({ name, -1, -1 });
     
-    handleRenames(parser, locals.back());
+    // We need to handle renames if this is an inlined compiler.
+    if (inlinedFrom) {
+        handleRenames(parser, locals.back());
+    }
 }
 
-void Compiler::markInitialized(Type type) {
+void Compiler::markInitialized() {
+    // Must be called after the local's type has been finalized
     Local &local = locals.back();
-    local.type = type;
     local.depth = scopeDepth;
 
-    // Only static bytecode variables need a slot size but for convenience
-    // we put a stackOffset on all variables, but non-static variables will
-    // just equal the previous local's stackOffset. Only bytecode variables
-    // will increase the offset. this is so we can avoid searching back
-    // through the locals list for a static.
-    local.stackOffset = 0;
-    if (locals.size() > 1) {
-        Local &prevLocal = locals[locals.size() - 2];
-        local.stackOffset = prevLocal.stackOffset;
-        if (prevLocal.isStatic) {
-            local.stackOffset += slotSizeOfType(prevLocal.type);
-        }
+    // I've opted to maintain a nextStackOffset that needs increasing and
+    // decreasing when the local goes out of scope, this is because a few
+    // places interact with stack offsets and it's a bit easier to just
+    // read from 1 place, it's also nicer to just have to deal with the
+    // current local's type rather than reading the previous local and
+    // checking if it's static each time.
+    if (local.isStatic) {
+        local.stackOffset = nextStackOffset;
+        nextStackOffset += slotSizeOfType(local.type);
     }
 }
 
@@ -549,7 +547,7 @@ ObjFunction *Parser::endCompiler() {
     return function;
 }
 
-
+// These should be on compiler
 void Parser::beginScope() {
     compiler->scopeDepth ++;
 }
@@ -557,11 +555,16 @@ void Parser::beginScope() {
 void Parser::endScope() {
     compiler->scopeDepth --;
 
-    if (isBytecode) vmWriter->endScope();
+    // This should run regardless of whether we are in bytecode
+    // mode or not, because we may have introduced any amount
+    // of static locals throughout the scope.
+    vmWriter->endScope();
     
     while (compiler->locals.size() > 0 &&
-            compiler->locals.back().depth >
-            compiler->scopeDepth) {
+            (compiler->locals.back().depth > compiler->scopeDepth)) {
+        if (compiler->locals.back().isStatic) {
+            compiler->nextStackOffset -= slotSizeOfType(compiler->locals.back().type);
+        }
         compiler->locals.pop_back();
     }
     
@@ -831,11 +834,11 @@ void Parser::varDeclaration() {
         }
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
-    compiler->markInitialized(type);
 
     if (initializer) {
         typecheckVarDeclarationInitializer(this, compiler->locals.back());
     }
+    compiler->markInitialized();
 
     // Nothing happens the VM - it is just left on the stack
     if (!isBytecode) {

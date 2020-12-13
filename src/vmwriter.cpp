@@ -44,9 +44,10 @@ struct VmWriter {
 
         int i = compiler->locals.size() - 1;
         while (i >= 0 &&
-                compiler->locals[i].depth >
-                compiler->scopeDepth) {
-            numSlots += slotSizeOfType(compiler->locals[i].type);
+                compiler->locals[i].depth > compiler->scopeDepth) {
+            if (compiler->locals[i].isStatic) {
+                numSlots += slotSizeOfType(compiler->locals[i].type);
+            }
             i --;
         }
 

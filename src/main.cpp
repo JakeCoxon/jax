@@ -6,7 +6,7 @@
 
 
 // #define DEBUG_PRINT_CODE
-// #define DEBUG_TRACE_EXECUTION
+#define DEBUG_TRACE_EXECUTION
 // #define DEBUG_PRINT_C_CODE
 
 #include "scanner.cpp"
@@ -53,6 +53,8 @@ static void runFile(const std::string &path) {
     bool success = compileToString(source, output);
     double compileTime = clock_ms() - startTimeCompile;
 
+    
+
     if (success) {
 #ifdef DEBUG_PRINT_C_CODE
         std::cout << output.str() << std::endl;
@@ -64,13 +66,14 @@ static void runFile(const std::string &path) {
         myfile.close();
 
 
-        system("clang output.c -o output");
+        int res = system("clang -Wunused-value output.c -o output");
         double everythingTime = clock_ms() - startTime;
+
+        if (res != 0) return;
 
         double startRuntime = clock_ms();
         system("./output");
         double runTime = clock_ms() - startRuntime;
-
         printf("Compile to c string: %fms\n", compileTime);
         printf("File op + c compile: %fms\n", (everythingTime - compileTime));
         printf("           Run time: %fms\n", runTime);

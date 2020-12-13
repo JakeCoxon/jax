@@ -112,12 +112,12 @@ while i < a.len {
   i = i + 1
 }
 
-// fun run_four(blk: lambda) @inline {
-//   blk()
-//   blk()
-//   blk()
-//   blk()
-// }
+fun run_four_blk(blk: lambda) @inline {
+  blk()
+  blk()
+  blk()
+  blk()
+}
 fun run_four(text: string) @inline {
   print("Calling print 4 times")
   print(text)
@@ -125,6 +125,30 @@ fun run_four(text: string) @inline {
   print(text)
   print(text)
 }
+// fun iterate(blk: lambda) @inline {
+//   var i = 0
+//   while i < 10 {
+//     blk(i)
+//     i = i + 1
+//   }
+// }
+// fun ints(start: number, blk: lambda) @inline {
+//   while true {
+//     blk(start)
+//     start = start + 1
+//   }
+// }
+
+// fun take(n: number, gen: lambda) @inline {
+//   var i = 0
+//   gen { |f|
+//     i = i + 1
+//     f()
+//     if i >= n {
+//       return
+//     }
+//   }
+// }
 
 static var my_cool_blk: lambda
 static {
@@ -148,7 +172,15 @@ var result = m1 + m2 + m3
 print("result of calling blocks: $result")
 
 run_four("hello")
-run_four("hello something more")
+run_four("hello something")
+
+static var blk = block {
+  print("inside a block")
+}
+run_four_blk(blk)
+run_four_blk(block {
+  print("run this anonymous block 4 times")
+})
 
 // fun map(a: array, blk: block) @inline {
 //   a = []
@@ -195,9 +227,9 @@ fun fib(n): number {
  return fib(n - 2) + fib(n - 1)
 }
 
-// var correct = fib(35) == 9227465
-// print("was correct? $correct")
-////print("{}", fib(3))
+var correct = fib(35) == 9227465
+print("was correct? $correct")
+//print("{}", fib(3))
 
 var time = clock_seconds() - start
 print("time was $time s")
