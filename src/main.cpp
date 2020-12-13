@@ -7,7 +7,7 @@
 
 
 // #define DEBUG_PRINT_CODE
-#define DEBUG_TRACE_EXECUTION
+// #define DEBUG_TRACE_EXECUTION
 // #define DEBUG_PRINT_C_CODE
 
 #include "scanner.cpp"
@@ -43,7 +43,7 @@ std::string readFile(const std::string &path) {
 
 double clock_ms() { return (double)clock() / CLOCKS_PER_SEC * 1000.0; }
 
-static int runFile(const std::string &path) {
+static int runFile(CompileOptions compileOptions, const std::string &path) {
     
     double startTime = clock_ms();
 
@@ -51,7 +51,7 @@ static int runFile(const std::string &path) {
     
     double startTimeCompile = clock_ms();
     std::ostringstream output;
-    bool success = compileToString(source, output);
+    bool success = compileToString(compileOptions, source, output);
     double compileTime = clock_ms() - startTimeCompile;
 
     
@@ -88,6 +88,9 @@ static int runFile(const std::string &path) {
 
 
 static void runTests() {
+    CompileOptions compileOptions;
+    compileOptions.noPrint = true;
+
     const char* path = "test";
     dirent *entry;
     DIR *dir = opendir(path);
@@ -100,7 +103,7 @@ static void runTests() {
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
         printf("--- Testing: %s -------------------------\n", entry->d_name);
-        int res = runFile(std::string("test/") + std::string(entry->d_name));
+        int res = runFile(compileOptions, std::string("test/") + std::string(entry->d_name));
         if (res == 0) successes ++;
         else fails ++;
     }
@@ -127,6 +130,7 @@ static void repl() {
 }
 
 int main(int argc, const char* argv[]) {
+    CompileOptions compileOptions;
 
     if (argc == 1) {
         repl();
@@ -134,7 +138,7 @@ int main(int argc, const char* argv[]) {
         if (strcmp(argv[1], "test") == 0) {
             runTests();
         } else {
-            runFile(argv[1]);
+            runFile(compileOptions, argv[1]);
         }
     } else {
         std::cerr << "Usage: jax [path]" << std::endl;

@@ -108,6 +108,10 @@ struct Declaration {
     mpark::variant<FunDeclaration, VarDeclaration, Statement> variant;
 };
 
+struct CompileOptions {
+    bool noPrint = false;
+};
+
 template <class T, class U>
 T *makeVariant(U *decl) {
     decl->variant = T {};
@@ -430,10 +434,12 @@ const char *tabs[] = {
 struct CodeGen {
 
     Parser *parser = nullptr;
+    CompileOptions compileOptions;
     std::ostringstream &ss;
     int indent = 0;
 
-    CodeGen(std::ostringstream &ss): ss(ss) {}
+    CodeGen(CompileOptions compileOptions, std::ostringstream &ss): 
+        compileOptions(compileOptions), ss(ss) {}
 
     void addIndent() {
         ss << tabs[indent];
@@ -687,6 +693,10 @@ struct CodeGen {
         ss << "void assert_failed(int line) { printf(\"Assertion failed line %i\\n\", line); exit(1); }" << endl;
         ss << "#define assert(b) if (!(b)) assert_failed(__LINE__)" << endl;
 
+        if (compileOptions.noPrint) {
+            ss << "#define printf(...)" << endl;
+        }
+
         // TODO: Make this better
         ss << "const char *_make_string(const char *format, ...) {";
         ss << "    char *str = malloc(1024); ";
@@ -718,8 +728,8 @@ struct CodeGen {
     }
 };
 
-void generateCodeC(AstGen *astGen, std::ostringstream &stream) {
-    CodeGen codeGen(stream);
+void generateCodeC(CompileOptions compileOptions, AstGen *astGen, std::ostringstream &stream) {
+    CodeGen codeGen(compileOptions, stream);
     codeGen.parser = astGen->parser;
     
     codeGen.addTypedefs();

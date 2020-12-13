@@ -248,7 +248,7 @@ void registerNative(
     parser->compiler->functionDeclarations.push_back(decl);
 }
 
-bool compileToString(const std::string &source, std::ostringstream &stream) {
+bool compileToString(CompileOptions compileOptions, const std::string &source, std::ostringstream &stream) {
     Scanner scanner { source };
     auto function = new ObjFunction();
     AstGen ast;
@@ -273,7 +273,7 @@ bool compileToString(const std::string &source, std::ostringstream &stream) {
     parser.endCompiler();
 
     if (!parser.hadError) {
-        generateCodeC(&ast, stream);
+        generateCodeC(compileOptions, &ast, stream);
     }
     return !parser.hadError;
     
