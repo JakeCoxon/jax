@@ -179,6 +179,7 @@ struct Compiler {
     CompilerType type;
     Compiler *enclosing = nullptr;
     Compiler *inlinedFrom = nullptr;
+    Compiler *inlinedFromTop = nullptr;
     std::vector<Local> locals;
     std::vector<Type> expressionTypeStack;
     std::vector<FunctionDeclaration*> functionDeclarations;
@@ -190,7 +191,7 @@ struct Compiler {
     Type implicitReturnType = nullptr;
 
     Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
-            : function(function), type(type), enclosing(enclosing) {
+            : function(function), type(type), enclosing(enclosing), inlinedFromTop(this) {
     }
 
     int resolveLocal(const std::string_view &name);
@@ -305,14 +306,10 @@ FunctionDeclaration *Compiler::resolveFunctionDeclaration(const std::string_view
 }
 
 void Compiler::handleRenames(Parser *parser, Local &newLocal) {
-    Compiler *topLevel = inlinedFrom;
-    while (topLevel->inlinedFrom) {
-        topLevel = topLevel->inlinedFrom;
-    }
 
     Local *foundLocal = nullptr;
-    for (int i = topLevel->locals.size() - 1; i >= 0; i--) {
-        Local* local = &topLevel->locals[i];
+    for (int i = inlinedFromTop->locals.size() - 1; i >= 0; i--) {
+        Local* local = &inlinedFromTop->locals[i];
         if (newLocal.name == local->name) {
             foundLocal = local;
             break;
@@ -340,13 +337,13 @@ void Compiler::handleRenames(Parser *parser, Local &newLocal) {
     // (Bu they will need to stay until the end of the scope).
     // This local should be before any uninitialised local, to maintain the
     // correct ordering of locals, plus then markInitialized can just read the top
-    int newIndex = topLevel->locals.size();
-    if (newIndex > 0 && topLevel->locals[newIndex - 1].depth == -1) {
+    int newIndex = inlinedFromTop->locals.size();
+    if (newIndex > 0 && inlinedFromTop->locals[newIndex - 1].depth == -1) {
         newIndex --;
     }
-    int newStackOffset = newIndex > 0 ? topLevel->locals[newIndex - 1].stackOffset : 0;
-    topLevel->locals.insert(topLevel->locals.begin() + newIndex,
-        { newNameView, topLevel->scopeDepth, newStackOffset });
+    int newStackOffset = newIndex > 0 ? inlinedFromTop->locals[newIndex - 1].stackOffset : 0;
+    inlinedFromTop->locals.insert(inlinedFromTop->locals.begin() + newIndex,
+        { newNameView, inlinedFromTop->scopeDepth, newStackOffset });
 
 }
 
@@ -724,13 +721,13 @@ void Parser::returnStatement() {
         error("Can't return from top-level code.");
     }
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
-        typecheckReturnNil(this, compiler->function);
+        typecheckReturnNil(this, compiler->inlinedFromTop->function);
         if (isBytecode) vmWriter->returnStatement(true);
         else ast->returnStatement(true);
     } else {
         expression();
         consumeEndStatement("Expect ';' or newline after return value");
-        typecheckReturn(this, compiler->function);
+        typecheckReturn(this, compiler->inlinedFromTop->function);
         if (isBytecode) vmWriter->returnStatement(false);
         else ast->returnStatement(false);
     }
@@ -1047,29 +1044,29 @@ void Parser::stringAdvanced(StringParseFlags spf) {
 
             Token iden = previous();
 
-            int local = compiler->resolveLocal(iden.text);
-            if (local == -1) {
+            int arg = compiler->resolveLocal(iden.text);
+            if (arg == -1) {
                 errorAt(iden, "Couldn't find variable.");
                 continue;
             }
 
-            Type localType = compiler->locals[local].type;
+            Local *local = &compiler->locals[arg];
             if (isBytecode) {
                 vmWriter->namedVariable(local, false);
-                if (localType == types::Number || localType == types::Bool) {
+                if (local->type == types::Number || local->type == types::Bool) {
                     vmWriter->doubleToString();
                 }
             } else {
                 ast->variable(local);
-                if (localType == types::Bool) {
+                if (local->type == types::Bool) {
                     ast->functionCallNative("_bool_to_string", 1);
                 }
             }
 
-            if (localType == types::Number) ss << "%f";
-            else if (localType == types::String) ss << "%s";
-            else if (localType == types::Bool) ss << "%s";
-            else if (localType == types::VoidPtr) ss << "%p";
+            if (local->type == types::Number) ss << "%f";
+            else if (local->type == types::String) ss << "%s";
+            else if (local->type == types::Bool) ss << "%s";
+            else if (local->type == types::VoidPtr) ss << "%p";
             else {
                 error("Cannot format this type.");
             }
@@ -1251,22 +1248,33 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     if (arg == -2) {
         error("Can't read local variable in its own initializer.");
     }
+
+    // Fold this into resolveLocal function?
+    Local *local = nullptr;
     if (arg != -1) {
-        typecheckVariable(this, arg);
-        Local &local = compiler->locals[arg];
+        local = &compiler->locals[arg];
+    } else {
+        int arg = compiler->inlinedFromTop->resolveLocal(name);
+        if (arg != -1) {
+            local = &compiler->inlinedFromTop->locals[arg];
+        }
+    }
+    
+    if (local != nullptr) {
+        typecheckVariable(this, local);
 
         if (!isBytecode) {
-            if (local.isStatic) vmWriter->namedVariable(arg, false);
-            else ast->variable(arg);
+            if (local->isStatic) vmWriter->namedVariable(local, false);
+            else ast->variable(local);
         }
 
         if (es.canAssign && match(TokenType::Equal)) {
             expression();
             typecheckAssignExpression(this);
-            if (isBytecode) vmWriter->namedVariable(arg, true);
+            if (isBytecode) vmWriter->namedVariable(local, true);
             else ast->assignment();
         } else {
-            if (isBytecode) vmWriter->namedVariable(arg, false);
+            if (isBytecode) vmWriter->namedVariable(local, false);
         }
         return;
     }

@@ -253,6 +253,7 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     // needed in compiler at all? just for bytecode?
     Compiler newCompiler(function, CompilerType::Function, funDecl->enclosingCompiler);
     newCompiler.inlinedFrom = this->compiler;
+    newCompiler.inlinedFromTop = this->compiler->inlinedFromTop;
     newCompiler.nextStackOffset = this->compiler->nextStackOffset;
 
     // Handle function parameters before we switch to the

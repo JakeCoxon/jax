@@ -203,12 +203,11 @@ struct AstGen {
         lit->name = name;
         expressionStack.push_back(expr);
     }
-    void variable(int localIndex) {
-        Local &local = parser->compiler->locals[localIndex];
+    void variable(Local *local) {
         auto expr = newExpr();
         auto var = makeVariant<VariableLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
-        var->name = local.renamedTo.size() ? local.renamedTo : local.name;
+        var->name = local->renamedTo.size() ? local->renamedTo : local->name;
         expressionStack.push_back(expr);
     }
     void booleanLiteral(bool value) {

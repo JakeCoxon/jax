@@ -261,9 +261,8 @@ void typecheckAssign(Parser *parser, int local) {
     }
 }
 
-void typecheckVariable(Parser *parser, int local) {
-    Type type = parser->compiler->locals[local].type;
-    parser->compiler->expressionTypeStack.push_back(type);
+void typecheckVariable(Parser *parser, Local *local) {
+    parser->compiler->expressionTypeStack.push_back(local->type);
 }
 
 

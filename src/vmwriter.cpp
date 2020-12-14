@@ -243,17 +243,17 @@ struct VmWriter {
         emitByte(constant);
     }
 
-    void namedVariable(int localIndex, bool assignment) {
+    void namedVariable(Local *local, bool assignment) {
         OpCode getOp = OpCode::GetLocal;
         OpCode setOp = OpCode::SetLocal;
 
-        Type type = parser->compiler->locals[localIndex].type;
+        Type type = local->type;
         if (type == types::Number || type == types::Bool) {
             getOp = OpCode::GetLocalDouble;
             setOp = OpCode::SetLocalDouble;
         }
 
-        size_t stackOffset = parser->compiler->locals[localIndex].stackOffset;
+        size_t stackOffset = local->stackOffset;
         assert(stackOffset < 256);
 
         if (assignment) {

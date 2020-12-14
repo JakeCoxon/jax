@@ -50,8 +50,29 @@ run_four_blk(block {
   print("run this anonymous block 4 times")
 })
 
-// TODO: Scope rules aren't working yet.
-// var result = 0
-// run_four_blk(block {
-//   result = result + 1
-// })
+// Outer scope variables 
+{
+  var another_result = 0
+  run_four_blk(block {
+    another_result = another_result + 1
+  })
+  assert(another_result == 4)
+}
+
+// Function early returns
+// TODO: This is picking up the wrong block
+// {
+//   fun try_something(): number {
+//     var result = 0
+//     run_four_blk(block {
+//       result = result + 1
+//       if result == 3 {
+//         return result
+//       }
+//     })
+//     return result
+//   }
+
+//   var result = try_something()
+//   assert(result == 3)
+// }
