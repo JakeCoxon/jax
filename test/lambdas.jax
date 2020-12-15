@@ -48,9 +48,9 @@ run_four_times(block {
 })
 
 // Lambdas have access to the outer scope variables.
-// Since the lambda and the run_four_times is inlined
-// then there are no closed-over variables and no
-// runtime cost.
+// Since the lambda and the run_four_times function
+// are inlined then there are no closed-over variables
+// and so no closures and no runtime cost.
 {
   var another_result = 0
   run_four_times(block {
@@ -75,4 +75,27 @@ run_four_times(block {
 
   var result = try_something()
   assert(result == 3)
+}
+
+// Lambdas can have parameters
+static var params_blk = block { |x, y, z|
+  x + y * z
+}
+assert(params_blk(1,2,3) == 7)
+
+// Params can be passed around like usual
+{
+  fun run_times(n: number, blk: lambda) @inline {
+    var i = 0
+    while i < n {
+      blk(i)
+      i = i + 1
+    }
+  }
+
+  var count = 0
+  run_times(5, block { |i|
+    count = count + i
+  })
+  assert(count == 10)
 }

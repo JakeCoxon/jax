@@ -114,68 +114,70 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
 
 }
 
+void Parser::functionParameters(FunctionDeclaration *decl) {
+
+    do {
+        if (decl->parameters.size() >= 255) {
+            errorAtCurrent("Can't have more than 255 parameters.");
+        }
+
+        consume(TokenType::Identifier, "Expect parameter name.");
+        auto parameterName = previous().text;
+
+        Type argumentType = types::Unknown;
+        if (match(TokenType::Colon)) {
+            consume(TokenType::Identifier, "Expect type name after ':'.");
+            argumentType = typeByName(this, previous().text);
+        }
+        // typecheckParameter(this, function, functionType, argumentType);
+
+        decl->parameters.push_back({ parameterName, argumentType });
+        if (argumentType == types::Lambda) {
+            decl->parameters.back().isStatic = true;
+        }
+        if (argumentType == types::Unknown) {
+            decl->polymorphic = true;
+        }
+    } while (match(TokenType::Comma));
+}
+
 
 void Parser::funDeclaration() {
     consume(TokenType::Identifier, "Expect function name.");
     auto name = previous().text;
     auto function = new ObjFunction();
     Compiler *enclosingCompiler = compiler;
-    Compiler *functionCompiler = new Compiler(function, CompilerType::Function, enclosingCompiler);
+    // Compiler *functionCompiler = new Compiler(function, CompilerType::Function, enclosingCompiler);
     uint16_t constant = makeConstant(function);
     // int functionType = typecheckFunctionDeclaration(this, function);
     // initCompiler(functionCompiler);
     // beginScope();
 
-    std::vector<FunctionParameter> parameters;
-    bool polymorphic = false;
-
-    consume(TokenType::LeftParen, "Expect '(' after function name.");
-    if (!check(TokenType::RightParen)) {
-        do {
-            function->arity++;
-            if (function->arity > 255) {
-                errorAtCurrent("Can't have more than 255 parameters.");
-            }
-
-            consume(TokenType::Identifier, "Expect parameter name.");
-            auto parameterName = previous().text;
-
-            Type argumentType = types::Unknown;
-            if (match(TokenType::Colon)) {
-                consume(TokenType::Identifier, "Expect type name after ':'.");
-                argumentType = typeByName(this, previous().text);
-            }
-            // typecheckParameter(this, function, functionType, argumentType);
-
-            parameters.push_back({ parameterName, argumentType });
-            if (argumentType == types::Lambda) {
-                parameters.back().isStatic = true;
-            }
-            if (argumentType == types::Unknown) {
-                polymorphic = true;
-            }
-        } while (match(TokenType::Comma));
-    }
-    consume(TokenType::RightParen, "Expect ')' after after parameters.");
-
-    Type returnType = types::Void;
-    if (match(TokenType::Colon)) {
-        consume(TokenType::Identifier, "Expect type name after ':'.");
-        returnType = typeByName(this, previous().text);
-    }
-
-
     auto decl = new FunctionDeclaration; // @leak
     decl->name = name;
-    decl->parameters = parameters;
-    decl->returnType = returnType;
-    decl->polymorphic = polymorphic;
+    decl->parameters = {};
+    decl->polymorphic = false;
     decl->enclosingCompiler = enclosingCompiler;
     decl->isExtern = false;
     decl->constant = constant;
     decl->blockStart = scanner->start;
     decl->blockLine = scanner->line;
     enclosingCompiler->functionDeclarations.push_back(decl);
+
+    consume(TokenType::LeftParen, "Expect '(' after function name.");
+    if (!check(TokenType::RightParen)) {
+        functionParameters(decl);
+    }
+    consume(TokenType::RightParen, "Expect ')' after after parameters.");
+    function->arity = decl->parameters.size();
+
+    decl->returnType = types::Void;
+    if (match(TokenType::Colon)) {
+        consume(TokenType::Identifier, "Expect type name after ':'.");
+        decl->returnType = typeByName(this, previous().text);
+    }
+
+
 
     if (match(TokenType::At)) {
         consume(TokenType::Identifier, "Expect name after '@'.");
@@ -234,7 +236,13 @@ void Parser::lambda(ExpressionState es) {
 
     consume(TokenType::LeftBrace, "Expect '{' after 'block'.");
 
-    // Must be AFTER the left brace
+    if (match(TokenType::Pipe)) {
+        functionParameters(decl);
+        consume(TokenType::Pipe, "Expected '|' after parameter list.");
+    }
+    function->arity = decl->parameters.size();
+
+    // Must be AFTER the left brace / parameter list
     decl->blockStart = scanner->start;
     decl->blockLine = scanner->line;
 
@@ -318,7 +326,6 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     tempScanner.current = funDecl->blockStart;
     tempScanner.start = funDecl->blockStart;
     tempScanner.line = funDecl->blockLine;
-    tempScanner.parens = 0;
     this->compiler = &newCompiler;
     this->scanner = &tempScanner;
     advance();

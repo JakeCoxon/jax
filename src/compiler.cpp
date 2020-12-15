@@ -159,6 +159,8 @@ struct Parser {
     void dot(ExpressionState es);
     void lambda(ExpressionState es);
     void callLambda(ExpressionState es);
+
+    void functionParameters(FunctionDeclaration *functionDeclaration);
     uint8_t argumentList(FunctionDeclaration *functionDeclaration);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
@@ -1337,6 +1339,7 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // Colon
     {&Parser::at,       nullptr,           Precedence::None},       // At
     {nullptr,           nullptr,           Precedence::None},       // Dollar
+    {nullptr,           nullptr,           Precedence::None},       // Pipe
     {&Parser::unary,    nullptr,           Precedence::None},       // Bang
     {nullptr,           &Parser::binary,   Precedence::Equality},   // BangEqual
     {nullptr,           nullptr,           Precedence::None},       // Equal

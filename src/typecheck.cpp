@@ -91,7 +91,7 @@ void typecheckIfCondition(Parser *parser) {
 void typecheckVarDeclarationInitializer(Parser *parser, Local &local) {
     Type initializeType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
-    if (local.type == types::Void) {
+    if (local.type == types::Void || local.type == types::Unknown) { // TODO: Why void?
         local.type = initializeType;
     }
     if (!typecheckIsAssignable(parser, local.type, initializeType)) {
