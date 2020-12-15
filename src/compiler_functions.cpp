@@ -25,7 +25,7 @@ FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *function
 
     // TODO: Garbage collection
     auto newFunction = new ObjFunction();
-    Compiler *compiler = new Compiler(newFunction, CompilerType::Function, functionDeclaration->enclosingCompiler);
+    Compiler *compiler = new Compiler(newFunction, CompilerType::Function, functionDeclaration->enclosingCompiler); // @leak
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
     // TODO: Garbage collection
@@ -58,6 +58,16 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     Scanner *initialScanner = this->scanner;
     auto functionTypeObj = functionType->functionTypeData();
     Compiler *compiler = functionInst.compiler;
+
+    // We need to update the nextStackOffset of the new compiler
+    // to be the same as the one that we were _called from_ (not
+    // necessarily) the enclosing compiler. This function was
+    // not called from bytecode, it is a runtime function, so the
+    // VM shares the stack of the calling function.
+    // It feels a bit weird to mutate the compiler instance like
+    // this but we want to ensure that we pick up the correct
+    // initialCompiler.
+    compiler->nextStackOffset = initialCompiler->nextStackOffset;
         
     beginScope();
     ast->beginFunctionDeclaration(functionInst);
@@ -292,6 +302,11 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
         }
     }
     consume(TokenType::RightParen, "Expect ')' after arguments.");
+
+    // Run the VM. We don't _have_ to do this here but it makes debugging
+    // easier if we know what the stack is at this point. Also I suppose
+    // we wan't to run any sideeffects that function arguments might have.
+    vmWriter->vm.run();
 
     Scanner tempScanner { initialScanner->source };
     tempScanner.current = funDecl->blockStart;
