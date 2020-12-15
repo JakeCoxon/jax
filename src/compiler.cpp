@@ -439,6 +439,9 @@ void Parser::consumeEndStatement(const std::string &message) {
     if (current().type == TokenType::EOF_) {
         return;
     }
+    if (current().type == TokenType::RightBrace) {
+        return;
+    }
     
     errorAtCurrent(message);
 }

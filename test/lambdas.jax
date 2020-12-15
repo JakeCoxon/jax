@@ -47,6 +47,9 @@ run_four_times(block {
   print("run this anonymous block 4 times")
 })
 
+static var single_line = block { print("They can be single line") }
+single_line()
+
 // Lambdas have access to the outer scope variables.
 // Since the lambda and the run_four_times function
 // are inlined then there are no closed-over variables
