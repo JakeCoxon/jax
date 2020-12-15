@@ -1,5 +1,7 @@
 fun assert(b: bool) @extern
 
+// At compile time code runs in a VM and can be used to modify
+// the runtime program.
 static {
   var cool_thing = 1
   var i = 1
@@ -14,13 +16,13 @@ static {
   add_code("var compile_value = $cool_thing\n")
   add_code("print(\"compile value is \$compile_value\")\n")
 }
+assert(compile_value == 512)
 
+// Decisions can be made at compile time
 var success = false
 static if 3 > 2 {
-  // TODO: this breaks
   add_code("success = true\n")
   print("Conditionals at compile time")
 }
 
 assert(success)
-assert(compile_value == 512)

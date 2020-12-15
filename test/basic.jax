@@ -1,3 +1,4 @@
+fun assert(b: bool) @extern
 
 var start = clock_seconds()
 
@@ -10,7 +11,8 @@ var thing = @string(indented) "
         banana = $banana
 "
 
-print("apple is $apple ")
+print("apple is $apple" == "apple is 5.000000")
+
 // print(banana)
 
 // banana = banana - 1
@@ -61,15 +63,14 @@ me.age = 200
 
 var fn = me.firstname
 var ln = me.lastname
-print("fullname is $fn $ln")
+assert("fullname is $fn $ln" == "fullname is Jake Someone")
 
 
-fun compare(x, y) {
-  if x == y {
-    print("They are the same")
-  }
+fun compare(x, y): bool {
+  return x == y
 }
-compare("hello", "jello")
+assert(compare("hello", "jello") == false)
+assert(compare(1, 1))
 
 
 fun fib(n): number {
@@ -80,6 +81,7 @@ fun fib(n): number {
 }
 
 var correct = fib(35) == 9227465
+assert(correct)
 print("was correct? $correct")
 //print("{}", fib(3))
 

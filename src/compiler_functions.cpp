@@ -35,8 +35,14 @@ FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *function
 
     compiler->compiled = true; // Mark this so we don't recurse
 
+    int size = functionDeclaration->overloads.size() + 1;
+    std::string renamedTo = std::string(functionDeclaration->name);
+    if (size > 1) {
+        renamedTo += "__" + std::to_string(size);
+    }
+
     FunctionInstantiation functionInst = {
-        functionType, newFunction, compiler, functionDeclaration
+        functionType, newFunction, compiler, functionDeclaration, renamedTo
     };
     functionDeclaration->overloads.push_back(functionInst);
 

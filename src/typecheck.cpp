@@ -184,6 +184,14 @@ void typecheckArrayAccess(Parser *parser) {
     parser->compiler->expressionTypeStack.push_back(arrayType->arrayTypeData()->elementType);
 }
 
+bool typecheckIsBinaryStrings(Parser *parser) {
+    Compiler *compiler = parser->compiler;
+    Type typeB = compiler->expressionTypeStack.back();
+    Type typeA = compiler->expressionTypeStack.back();
+    
+    return typeA == types::String && typeB == types::String;
+}
+
 void typecheckBinary(Parser *parser, TokenType operatorType) {
     Compiler *compiler = parser->compiler;
     Type typeB = compiler->expressionTypeStack.back();

@@ -50,6 +50,7 @@ struct FunctionInstantiation {
     Value function;
     Compiler *compiler = nullptr;
     FunctionDeclaration *declaration = nullptr;
+    std::string renamedTo;
 };
 
 struct FunctionDeclaration {
@@ -232,7 +233,7 @@ void registerNative(
     auto native = new ObjNative{type, nativeFn};
     // TODO: garbage collection
     auto functionName = new ObjString{name};
-    FunctionInstantiation inst = {type, native};
+    FunctionInstantiation inst = {type, native, nullptr, nullptr, name};
     auto constant = parser->makeConstant(native);
 
     auto decl = new FunctionDeclaration;
@@ -958,6 +959,27 @@ void Parser::binary(ExpressionState es) {
     ParseRule &rule = getRule(operatorType);
     int prec = static_cast<int>(rule.precedence);
     parsePrecedence(Precedence(prec + 1)); // +1 because of left associativity
+
+    if (typecheckIsBinaryStrings(this)) {
+        typecheckBinary(this, operatorType);
+
+        switch (operatorType) {
+            case TokenType::EqualEqual:
+                ast->stringEquals(true);
+                break;
+            case TokenType::BangEqual:
+                ast->stringEquals(false);
+                break;
+            case TokenType::Plus:
+                // TODO:
+                break;
+            default:
+                error("Unrecognised operator.");
+                return;
+        }
+
+        return;
+    }
 
     typecheckBinary(this, operatorType);
 

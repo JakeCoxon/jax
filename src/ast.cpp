@@ -7,6 +7,7 @@ struct Declaration;
 
 struct FunctionCall {
     FunctionDeclaration *functionDeclaration;
+    FunctionInstantiation instantiation;
     int argCount;
     std::vector<Expr*> arguments;
 };
@@ -245,6 +246,24 @@ struct AstGen {
         functionCallNative("_make_string", numArgs + 1);
     }
 
+    void stringEquals(bool isEqual) {
+        functionCallNative("strcmp", 2);
+
+        // I wish we could just give it text directly
+        Token numberToken;
+        std::string *text = new std::string(); // @leak
+        if (isEqual) *text = "0";
+        else *text = "1";
+        numberToken.text = *text;
+        number(numberToken);
+
+        Token operatorToken;
+        std::string *operatorText = new std::string("=="); // @leak
+        operatorToken.text = *operatorText;
+        operatorToken.type = TokenType::EqualEqual;
+        infix(operatorToken);
+    }
+
     void infix(Token operatorToken) {
         auto expr = newExpr();
         Expr *right = popExpression();
@@ -267,6 +286,7 @@ struct AstGen {
         auto call = makeVariant<FunctionCall>(expr);
         call->argCount = argCount;
         call->arguments = args;
+        call->instantiation = inst;
         call->functionDeclaration = inst.declaration;
         expressionStack.push_back(expr);
     }
@@ -471,7 +491,7 @@ struct CodeGen {
             Type returnType = functionType->returnType;
 
             addTypeName(returnType);
-            ss << " " << instAst.inst.declaration->name << "(";
+            ss << " " << instAst.inst.renamedTo << "(";
             size_t i = 0;
             for (auto param : instAst.inst.declaration->parameters) {
                 addTypeName(functionType->parameterTypes[i]);
@@ -543,7 +563,7 @@ struct CodeGen {
             },
             [&](Unit &u) {},
             [&](FunctionCall &call) {
-                ss << call.functionDeclaration->name;
+                ss << call.instantiation.renamedTo;
                 ss << "(";
                 size_t i = 0; 
                 for (Expr *arg : call.arguments) {
