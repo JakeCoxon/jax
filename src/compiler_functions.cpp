@@ -218,6 +218,12 @@ void Parser::lambda(ExpressionState es) {
     //     return;
     // }
 
+    consume(TokenType::LeftBrace, "Expect '{' after 'block'.");
+    lambdaContents();
+}
+
+void Parser::lambdaContents() {
+
     auto function = new ObjFunction(); // @leak
     function->name = new ObjString("lambda"); // @leak
 
@@ -234,7 +240,7 @@ void Parser::lambda(ExpressionState es) {
 
     function->functionDeclaration = decl;
 
-    consume(TokenType::LeftBrace, "Expect '{' after 'block'.");
+    
 
     if (match(TokenType::Pipe)) {
         functionParameters(decl);
@@ -280,34 +286,37 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     newCompiler.inlinedFromTop = this->compiler->inlinedFromTop;
     newCompiler.nextStackOffset = this->compiler->nextStackOffset;
 
+
     // Handle function parameters before we switch to the
     // new compiler. The compiler methods should be written
     // in a way to not make an assumption on which compiler
     // is currently active.
     function->argSlots = 0;
-    for (size_t i = 0; i < funDecl->parameters.size(); i++) {
-        if (i > 0) {
-            consume(TokenType::Comma, "Expected ',' after expression.");
-        }
-        
-        newCompiler.declareVariable(this, funDecl->parameters[i].name);
+    size_t argCount = 0;
+    while (argumentListNext(funDecl, &argCount)) {
+        // for (size_t i = 0; i < funDecl->parameters.size(); i++) {
+        // if (i > 0) {
+        //     consume(TokenType::Comma, "Expected ',' after expression.");
+        // }
+        auto param = funDecl->parameters[argCount - 1];
+        newCompiler.declareVariable(this, param.name);
         Local &local = newCompiler.locals.back();
-        local.isStatic = funDecl->parameters[i].isStatic;
+        local.isStatic = param.isStatic;
 
         // Maybe not needed because expression happens immediately.
-        if (check(TokenType::RightParen)) {
-            error("Expected argument, this argument is not optional.");
-            break;
-        }
+        // if (check(TokenType::RightParen)) {
+        //     error("Expected argument, this argument is not optional.");
+        //     break;
+        // }
 
-        expression();
-        typecheckFunctionArgument(this, funDecl, i);
+        // expression();
+        // typecheckFunctionArgument(this, funDecl, i);
         
-        local.type = funDecl->parameters[i].type;
+        local.type = param.type;
         newCompiler.markInitialized();
         typecheckVarDeclarationInitializer(this, local);
         
-        // Nothing happens the VM - it is just left on the stack
+        // Nothing happens in the VM - it is just left on the stack
         if (!local.isStatic) {
             ast->varDeclaration(local, /* initializer */ true);
         } else {
@@ -315,7 +324,11 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
             function->argSlots += slotSize;
         }
     }
-    consume(TokenType::RightParen, "Expect ')' after arguments.");
+
+    if (argCount != funDecl->parameters.size()) {
+        error("Not enough arguments for this function.");
+        return types::Void;
+    }
 
     // Run the VM. We don't _have_ to do this here but it makes debugging
     // easier if we know what the stack is at this point. Also I suppose
@@ -345,21 +358,64 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     return newCompiler.implicitReturnType;
 }
 
+bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount) {
+    // Returns true if we found an argument - must continue to loop.
+
+    if (!match(TokenType::RightParen)) {
+        // This is a bit hacky, I want a better state machine
+        if (!check(TokenType::Comma) && previous().type == TokenType::RightBrace) {
+            return false;
+        }
+
+        if (*argCount > 0) {
+            consume(TokenType::Comma, "Expect ',' or ')' after argument");
+        }
+
+        expression();
+        if (*argCount == 255) {
+            error("Can't have more than 255 arguments.");
+            return false;
+        }
+        typecheckFunctionArgument(this, functionDeclaration, *argCount);
+        (*argCount) ++;
+        return true;
+    }
+
+    // Matched right paren at this point
+
+    if (match(TokenType::LeftBrace)) {
+        lambdaContents();
+        typecheckFunctionArgument(this, functionDeclaration, *argCount);
+        (*argCount) ++;
+        return true;
+    }
+    return false;
+}
+
 
 uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
-    uint8_t argCount = 0;
-    if (!check(TokenType::RightParen)) {
-        do {
-            expression();
-            if (argCount == 255) {
-                error("Can't have more than 255 arguments.");
-            }
-            typecheckFunctionArgument(this, functionDeclaration, argCount);
-            argCount ++;
-        } while (match(TokenType::Comma));
+    size_t argCount = 0;
+    while (argumentListNext(functionDeclaration, &argCount)) {
+        continue;
     }
-    consume(TokenType::RightParen, "Expect ')' after arguments.");
-    return argCount;
+    // uint8_t argCount = 0;
+    // if (!check(TokenType::RightParen)) {
+    //     do {
+    //         expression();
+    //         if (argCount == 255) {
+    //             error("Can't have more than 255 arguments.");
+    //         }
+    //         typecheckFunctionArgument(this, functionDeclaration, argCount);
+    //         argCount ++;
+    //     } while (match(TokenType::Comma));
+    // }
+    // consume(TokenType::RightParen, "Expect ')' after arguments.");
+    // if (match(TokenType::RightBrace)) {
+    //     lambdaContents();
+    //     argCount ++;
+    // }
+    
+    return (uint8_t)argCount;
 }
 
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {

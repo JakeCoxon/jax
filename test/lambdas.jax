@@ -81,12 +81,11 @@ single_line()
 }
 
 // Lambdas can have parameters
-static var params_blk = block { |x, y, z|
-  x + y * z
-}
+static var params_blk = block { |x, y, z| x + y * z }
 assert(params_blk(1,2,3) == 7)
 
-// Params can be passed around like usual
+// Params can be passed around like usual, and blocks
+// can be implicity added to the argument list
 {
   fun run_times(n: number, blk: lambda) @inline {
     var i = 0
@@ -97,8 +96,8 @@ assert(params_blk(1,2,3) == 7)
   }
 
   var count = 0
-  run_times(5, block { |i|
+  run_times(5) { |i|
     count = count + i
-  })
+  }
   assert(count == 10)
 }
