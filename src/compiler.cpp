@@ -163,7 +163,6 @@ struct Parser {
     void lambdaContents();
     void functionParameters(FunctionDeclaration *functionDeclaration);
     bool argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount);
-    uint8_t argumentList(FunctionDeclaration *functionDeclaration);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
 

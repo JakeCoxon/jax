@@ -2,7 +2,7 @@
 
 
 FunctionInstantiation *Parser::getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount) {
-    // slow as hell
+    // @speed slow as hell
     for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
         auto inst = &functionDeclaration->overloads[j];
         auto functionTypeObj = inst->type->functionTypeData();
@@ -291,35 +291,27 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     // new compiler. The compiler methods should be written
     // in a way to not make an assumption on which compiler
     // is currently active.
+    // The reason for fetching the arguments in an iterator
+    // style instead of fetching them all at once is because
+    // its easier to deal with things on the top of stack
+    // one-by-one
     function->argSlots = 0;
     size_t argCount = 0;
     while (argumentListNext(funDecl, &argCount)) {
-        // for (size_t i = 0; i < funDecl->parameters.size(); i++) {
-        // if (i > 0) {
-        //     consume(TokenType::Comma, "Expected ',' after expression.");
-        // }
         auto param = funDecl->parameters[argCount - 1];
         newCompiler.declareVariable(this, param.name);
         Local &local = newCompiler.locals.back();
         local.isStatic = param.isStatic;
 
-        // Maybe not needed because expression happens immediately.
-        // if (check(TokenType::RightParen)) {
-        //     error("Expected argument, this argument is not optional.");
-        //     break;
-        // }
-
-        // expression();
-        // typecheckFunctionArgument(this, funDecl, i);
-        
         local.type = param.type;
         newCompiler.markInitialized();
         typecheckVarDeclarationInitializer(this, local);
         
-        // Nothing happens in the VM - it is just left on the stack
         if (!local.isStatic) {
             ast->varDeclaration(local, /* initializer */ true);
         } else {
+            // Nothing happens in the VM - it is just left on
+            // the stack but we should record the total slot size
             int slotSize = slotSizeOfType(newCompiler.locals.back().type);
             function->argSlots += slotSize;
         }
@@ -392,32 +384,6 @@ bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *
     return false;
 }
 
-
-uint8_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
-    size_t argCount = 0;
-    while (argumentListNext(functionDeclaration, &argCount)) {
-        continue;
-    }
-    // uint8_t argCount = 0;
-    // if (!check(TokenType::RightParen)) {
-    //     do {
-    //         expression();
-    //         if (argCount == 255) {
-    //             error("Can't have more than 255 arguments.");
-    //         }
-    //         typecheckFunctionArgument(this, functionDeclaration, argCount);
-    //         argCount ++;
-    //     } while (match(TokenType::Comma));
-    // }
-    // consume(TokenType::RightParen, "Expect ')' after arguments.");
-    // if (match(TokenType::RightBrace)) {
-    //     lambdaContents();
-    //     argCount ++;
-    // }
-    
-    return (uint8_t)argCount;
-}
-
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     if (functionDeclaration->isInline) {
@@ -431,7 +397,10 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     typecheckBeginFunctionCall(this, nullptr);
 
-    uint8_t argCount = argumentList(functionDeclaration);
+    size_t argCount = 0;
+    while (argumentListNext(functionDeclaration, &argCount)) {
+        continue;
+    }
 
     auto inst = getInstantiationByStackArguments(functionDeclaration, argCount);
     if (!inst) {
@@ -453,11 +422,8 @@ void Parser::callLambda(ExpressionState es) {
         return;
     }
 
-    // No arguments for now
-    //consume(TokenType::RightParen, "Expect ')' after argument list.");
-
     // To call this lambda we need to run the VM to figure out
-    // what the lambda functon object is. weretreive it from
+    // what the lambda function object is. weretreive it from
     // the VM and compile it.
 
     typecheckCallLambda(this);
