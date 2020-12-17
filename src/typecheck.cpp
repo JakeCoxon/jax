@@ -94,6 +94,9 @@ void typecheckVarDeclarationInitializer(Parser *parser, Local &local) {
     if (local.type == types::Void || local.type == types::Unknown) { // TODO: Why void?
         local.type = initializeType;
     }
+    if (local.type == types::Lambda) {
+        local.isStatic = true;
+    }
     if (!typecheckIsAssignable(parser, local.type, initializeType)) {
         parser->error("Cannot declare a variable with a different type.");
     }

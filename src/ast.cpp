@@ -447,7 +447,7 @@ struct AstGen {
 
 
 const char *tabs[] = {
-    "", "  ", "    ", "      ", "        ", "          "
+    "", "  ", "    ", "      ", "        ",
 };
 
 struct CodeGen {
@@ -461,7 +461,12 @@ struct CodeGen {
         compileOptions(compileOptions), ss(ss) {}
 
     void addIndent() {
-        ss << tabs[indent];
+        int x = indent;
+        while (x > 4) {
+            ss << tabs[4];
+            x -= 4;
+        }
+        ss << tabs[x];
     }
 
     void addTypeName(Type type) {

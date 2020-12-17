@@ -85,7 +85,7 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
         Local &local = compiler->declareVariable(this, functionDeclaration->parameters[i].name);
         local.type = functionTypeObj->parameterTypes[i];
-        local.isStatic = isBytecode; // or parameter is static?
+        local.isStatic = isBytecode || functionDeclaration->parameters[i].isStatic;
         compiler->markInitialized();
 
         if (isBytecode) {
@@ -228,7 +228,7 @@ void Parser::lambda(ExpressionState es) {
 void Parser::lambdaContents() {
 
     auto function = new ObjFunction(); // @leak
-    function->name = new ObjString("lambda"); // @leak
+    function->name = new ObjString("lambda line " + std::to_string(scanner->line)); // @leak
 
     std::vector<FunctionParameter> parameters;
 
@@ -307,8 +307,11 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
         local.isStatic = param.isStatic;
 
         local.type = param.type;
-        newCompiler.markInitialized();
         typecheckVarDeclarationInitializer(this, local);
+        // markInitialized after typecheck incase isStatic
+        // has changed
+        newCompiler.markInitialized();
+                                       
         
         if (!local.isStatic) {
             ast->varDeclaration(local, /* initializer */ true);
@@ -395,8 +398,12 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     }
 
     if (functionDeclaration->isInline && !functionDeclaration->isStatic) {
-        // TODO: Why is funciton needed here?
+        // TODO: Why is function needed here?
         ObjFunction *function = new ObjFunction();
+        // TODO: We need to do something about returns,
+        // semantically they should return from this function,
+        // but they currently return from the outer function.
+        // We should add a goto.
         inlineFunction(function, functionDeclaration);
         compiler->expressionTypeStack.push_back(types::Void);
         ast->unit();
@@ -445,27 +452,30 @@ void Parser::callLambda(ExpressionState es) {
         return;
     }
 
+    typecheckCallLambda(this);
+
     // To call this lambda we need to run the VM to figure out
     // what the lambda function object is. we retreive it from
     // the VM and compile it.
-
-    typecheckCallLambda(this);
 
     vmWriter->vm.run();
     ObjFunction &function = vmWriter->vm.peek<Value>().asFunction();
     FunctionDeclaration *funDecl = function.functionDeclaration;
 
+    // Bit of a hack - the lambda we are calling is on the stack and
+    // we need to clean it up, we know for sure we won't use it again
+    // because we aren't in bytecode mode, so we can pop it immediately,
+    // However the assumption is that the code refers to the variable
+    // and immediately calls it, what happens if the variable is never
+    // called?
+    // BTW we do this before inlining of the function, because otherwise
+    // our stack offsets are misaligned.
+    vmWriter->exprStatement();
+
     Type implicitReturnType = inlineFunction(&function, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
 
-    // Bit of a hack - the lambda we are calling is on the stack and
-    // we need to clean it up, we know for sure we won't use it again
-    // because we aren't in bytecode mode, so we can pop it immediately,
-    // However this is because the user can just refer to static locals
-    // directly in non-bytecode mode. If the user refers but doesn't use
-    // it in a function call it should be handled - error or cleaned up.
-    vmWriter->exprStatement();
 
     compiler->expressionTypeStack.pop_back(); // the lambda itself
     compiler->expressionTypeStack.push_back(implicitReturnType);

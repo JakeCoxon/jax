@@ -192,7 +192,7 @@ namespace types {
     const Type Function = new TypeData{6, PrimitiveTypeData{"function"}};
     const Type VoidPtr  = new TypeData{7, PrimitiveTypeData{"voidptr"}};
     const Type Array    = new TypeData{8, PrimitiveTypeData{"array"}};
-    const Type Lambda   = new TypeData{8, PrimitiveTypeData{"lambda"}};
+    const Type Lambda   = new TypeData{9, PrimitiveTypeData{"lambda"}};
 }
 
 struct FunctionDeclaration;

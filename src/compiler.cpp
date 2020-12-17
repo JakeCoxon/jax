@@ -1275,20 +1275,24 @@ void Parser::variable(ExpressionState es) {
 void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
     Token nameToken = previous();
 
-    int arg = compiler->resolveLocal(name);
-    if (arg == -2) {
-        error("Can't read local variable in its own initializer.");
-    }
+    Compiler *resolveCompiler = compiler;
 
     // Fold this into resolveLocal function?
+    // TODO: We don't actually want to resolve every compiler
+    // that we're inlining into! Only ones where we have scope
+    // access. We may be able to use enclosing, or we may need
+    // a new field.
     Local *local = nullptr;
-    if (arg != -1) {
-        local = &compiler->locals[arg];
-    } else {
-        int arg = compiler->inlinedFromTop->resolveLocal(name);
-        if (arg != -1) {
-            local = &compiler->inlinedFromTop->locals[arg];
+    while (resolveCompiler) {
+        int arg = resolveCompiler->resolveLocal(name);
+        if (arg == -2) {
+            error("Can't read local variable in its own initializer.");
         }
+        if (arg != -1) {
+            local = &resolveCompiler->locals[arg];
+            break;
+        }
+        resolveCompiler = resolveCompiler->inlinedFrom;
     }
     
     if (local != nullptr) {
