@@ -392,7 +392,7 @@ bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *
 
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
-    if (isBytecode && !functionDeclaration->isStatic) {
+    if (isBytecode && (!functionDeclaration->isStatic && !functionDeclaration->isExtern)) {
         error("Cannot call a static function from runtime.");
         return;
     }
@@ -436,9 +436,9 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     typecheckEndFunctionCall(this, inst->function, argCount);
     
-    if (functionDeclaration->isStatic) 
+    if (functionDeclaration->isStatic || isBytecode) { 
         vmWriter->functionCall(*inst, argCount);
-    else ast->functionCall(*inst, argCount);
+    } else ast->functionCall(*inst, argCount);
 }
 
 

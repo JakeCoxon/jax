@@ -1067,10 +1067,6 @@ void Parser::stringAdvanced(StringParseFlags spf) {
 
     while (true) {
         if (match(TokenType::Dollar)) {
-            // Usually the scanner will revert isString after a non-string token
-            // has been produced. This flag will force it to continue to parse
-            // strings after the identifier.
-            scanner->isString = true;
             consume(TokenType::Identifier, "Expect identifier after '$'.");
 
             Token iden = previous();

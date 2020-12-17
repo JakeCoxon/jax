@@ -34,5 +34,5 @@ static fun static_function(n: number): number {
   return n + 1
 }
 
-static var x = do_thing(10)
-static print(x)
+// static var x = do_thing(10)
+// static print(x)

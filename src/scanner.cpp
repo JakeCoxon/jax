@@ -44,6 +44,7 @@ struct Scanner {
     int line = 1;
     int parens = 0;
     bool isString = false;
+    bool isStringInterpolation = false;
 
     Token currentToken = {};
     Token previousToken = {};
@@ -183,9 +184,6 @@ Token Scanner::scanToken() {
 void Scanner::advanceToken() {
     previousToken = currentToken;
     currentToken = scanToken();
-    if (isString && currentToken.type != TokenType::String) {
-        isString = false;
-    }
 }
 
 
@@ -263,13 +261,17 @@ Token Scanner::string() {
 
 Token Scanner::scanTokenString() {
     start = current;
+    if (isAtEnd()) return makeToken(TokenType::EOF_);
 
     char c = advance();
     if (c == '\n') {
         line ++; lineStart = current + 1;
         return makeToken(TokenType::String);
     }
-    if (c == '$') return makeToken(TokenType::Dollar);
+    if (c == '$') {
+        isStringInterpolation = true;
+        return makeToken(TokenType::Dollar);
+    }
 
     if (c == '\\') {
         c = advance();
@@ -284,6 +286,11 @@ Token Scanner::scanTokenString() {
     else if (c == '"') {
         isString = false;
         return makeToken(TokenType::String);
+    }
+
+    if (isStringInterpolation) {
+        isStringInterpolation = false;
+        return identifier();
     }
 
     return string();
