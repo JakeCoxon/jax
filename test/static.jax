@@ -26,3 +26,13 @@ static if 3 > 2 {
 }
 
 assert(success)
+
+
+// Static functions can be called at compile time
+static fun static_function(n: number): number {
+  print("Called at compile time")
+  return n + 1
+}
+
+static var x = do_thing(10)
+static print(x)

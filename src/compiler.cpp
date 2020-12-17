@@ -57,13 +57,14 @@ struct FunctionDeclaration {
     std::string_view name;
     std::vector<FunctionParameter> parameters;
     Type returnType;
-    bool polymorphic;
 
     Compiler *enclosingCompiler;
     std::vector<FunctionInstantiation> overloads;
 
+    bool polymorphic = false;
     bool isExtern = false;
     bool isInline = false;
+    bool isStatic = false;
     
     size_t constant;
     size_t blockStart;
@@ -200,7 +201,7 @@ struct Compiler {
 
     int resolveLocal(const std::string_view &name);
     FunctionDeclaration *resolveFunctionDeclaration(const std::string_view &name);
-    void declareVariable(Parser* parser, const std::string_view& name);
+    Local &declareVariable(Parser* parser, const std::string_view& name);
     void handleRenames(Parser *parser, Local &newLocal);
     void markInitialized();
 };
@@ -257,10 +258,10 @@ bool compileToString(CompileOptions compileOptions, const std::string &source, s
     Scanner scanner { source };
     auto function = new ObjFunction();
     AstGen ast;
-    VmWriter vmWriter;
     Compiler compiler(function, CompilerType::Script, nullptr);
-    Parser parser { &scanner, &compiler, &ast, &vmWriter };
-    vmWriter.parser = &parser;
+    Parser parser { &scanner, &compiler, &ast, nullptr };
+    VmWriter vmWriter(&parser);
+    parser.vmWriter = &vmWriter;
     ast.parser = &parser;
     typecheckInit(&parser);
 
@@ -351,7 +352,7 @@ void Compiler::handleRenames(Parser *parser, Local &newLocal) {
 
 }
 
-void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
+Local &Compiler::declareVariable(Parser *parser, const std::string_view& name) {
     if (locals.size() == UINT8_COUNT) {
         parser->error("Too many local variables on the stack.");
     }
@@ -372,6 +373,7 @@ void Compiler::declareVariable(Parser *parser, const std::string_view& name) {
     if (inlinedFrom) {
         handleRenames(parser, locals.back());
     }
+    return locals.back();
 }
 
 void Compiler::markInitialized() {
@@ -483,6 +485,7 @@ void Parser::errorAt(Token &token, const std::string &message) {
 }
 
 uint16_t Parser::makeConstant(Value value) {
+    // Should this function really be in vmWriter?
     int constant = currentChunk().addConstant(value);
     if (constant > UINT8_MAX) {
         error("Too many constants in one chunk.");

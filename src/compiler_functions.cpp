@@ -75,15 +75,17 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     // initialCompiler.
     compiler->nextStackOffset = initialCompiler->nextStackOffset;
         
-    beginScope();
-    ast->beginFunctionDeclaration(functionInst);
+    if (isBytecode) vmWriter->beginFunctionDeclaration(functionInst);
+    else ast->beginFunctionDeclaration(functionInst);
     
     this->compiler = compiler;
+    beginScope();
 
     newFunction->argSlots = 0;
     for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-        compiler->declareVariable(this, functionDeclaration->parameters[i].name);
-        compiler->locals.back().type = functionTypeObj->parameterTypes[i];
+        Local &local = compiler->declareVariable(this, functionDeclaration->parameters[i].name);
+        local.type = functionTypeObj->parameterTypes[i];
+        local.isStatic = isBytecode; // or parameter is static?
         compiler->markInitialized();
 
         if (isBytecode) {
@@ -92,7 +94,6 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
         }
     }
     
-
     typecheckFunctionDeclarationReturnValue(this, newFunction, functionType, functionDeclaration->returnType);
     
     Scanner tempScanner { initialScanner->source };
@@ -105,8 +106,9 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     advance();
     
     block();
-    ast->endFunctionDeclaration();
     endCompiler();
+    if (isBytecode) vmWriter->endFunctionDeclaration(initialCompiler);
+    else ast->endFunctionDeclaration();
 
     // Reset back
     this->scanner = initialScanner;
@@ -159,6 +161,7 @@ void Parser::funDeclaration() {
     decl->polymorphic = false;
     decl->enclosingCompiler = enclosingCompiler;
     decl->isExtern = false;
+    decl->isStatic = isBytecode;
     decl->constant = constant;
     decl->blockStart = scanner->start;
     decl->blockLine = scanner->line;
@@ -386,7 +389,12 @@ bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *
 
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
-    if (functionDeclaration->isInline) {
+    if (isBytecode && !functionDeclaration->isStatic) {
+        error("Cannot call a static function from runtime.");
+        return;
+    }
+
+    if (functionDeclaration->isInline && !functionDeclaration->isStatic) {
         // TODO: Why is funciton needed here?
         ObjFunction *function = new ObjFunction();
         inlineFunction(function, functionDeclaration);
@@ -394,12 +402,22 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         ast->unit();
         return;
     }
-    
+
     typecheckBeginFunctionCall(this, nullptr);
+
+    // Calls to static functions must have static arguments
+    bool wasBytecode = isBytecode;
+    if (functionDeclaration->isStatic) {
+        isBytecode = true;
+    }
 
     size_t argCount = 0;
     while (argumentListNext(functionDeclaration, &argCount)) {
         continue;
+    }
+
+    if (functionDeclaration->isStatic) {
+        isBytecode = wasBytecode;
     }
 
     auto inst = getInstantiationByStackArguments(functionDeclaration, argCount);
@@ -411,19 +429,24 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     typecheckEndFunctionCall(this, inst->function, argCount);
     
-    if (isBytecode) vmWriter->functionCall(*inst, argCount);
+    if (functionDeclaration->isStatic) 
+        vmWriter->functionCall(*inst, argCount);
     else ast->functionCall(*inst, argCount);
 }
 
 
 void Parser::callLambda(ExpressionState es) {
     if (isBytecode) {
+        // TODO: The function object is already on the stack
+        // all we need is a lambda call opcode. and if we have
+        // that it would be nice to use that for regular calls
+        // as well.
         error("Not supported yet.");
         return;
     }
 
     // To call this lambda we need to run the VM to figure out
-    // what the lambda function object is. weretreive it from
+    // what the lambda function object is. we retreive it from
     // the VM and compile it.
 
     typecheckCallLambda(this);

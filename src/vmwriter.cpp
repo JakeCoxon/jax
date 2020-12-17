@@ -18,8 +18,9 @@ struct VmWriter {
     VM vm;
     ObjFunction *function;
 
-    VmWriter() {
-        function = new ObjFunction();
+    VmWriter(Parser *parser):
+            parser(parser),
+            function(parser->compiler->function) {
         vm.frames.push_back(CallFrame { function, 0, 0 });
     }
 
@@ -148,6 +149,13 @@ struct VmWriter {
             }
             default: break;
         }
+    }
+
+    void beginFunctionDeclaration(FunctionInstantiation &inst) {
+        function = inst.compiler->function;
+    }
+    void endFunctionDeclaration(Compiler *prevCompiler) {
+        function = prevCompiler->function;
     }
 
     IfStatementPatchState beginIfStatementBlock() {

@@ -320,6 +320,12 @@ Type getFunctionType(Parser *parser) {
 }
 
 void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDeclaration, int argIndex) {
+    if ((size_t)argIndex >= functionDeclaration->parameters.size()) {
+        parser->error("This function takes up to " + 
+            std::to_string(functionDeclaration->parameters.size()) +
+            " parameters");
+        return;
+    }
     Type argumentType = parser->compiler->expressionTypeStack.back();
     if (functionDeclaration->parameters[argIndex].type == types::Unknown) {
         // will be type checked later
