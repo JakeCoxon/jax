@@ -247,6 +247,7 @@ struct VM {
     ObjString *allocateString(std::string string);
     bool beginCall(ObjFunction* function, int argCount);
     bool callValue(Value callee);
+    void returnFromFunction(int startSlot, int returnSlots);
     void stringFormat(int argCount);
 
     void binaryOperation(OpCode instruction);
@@ -511,17 +512,12 @@ InterpretResult VM::run() {
                 break;
             }
             case OpCode::Return: {
-                // assert(false);
-                double result = pop<double>();
+                returnFromFunction(frame->firstSlot, frame->function->returnSlots);
+
                 frames.pop_back();
                 if (frames.size() == 0) {
                     return InterpretResult::Ok;    
                 }
-                int slots = stack.size() - frame->firstSlot;
-                while (slots) {
-                    pop<uint32_t>(); slots --;
-                }
-                push(result);
                 frame = &frames.back();
                 break;
             }
@@ -536,11 +532,6 @@ ObjString *VM::allocateString(std::string text) {
 }
 
 bool VM::beginCall(ObjFunction* function, int argCount) {
-    // if (argCount != function->arity) {
-    //     runtimeError("Expected %i arguments but got %i\n", function->arity, argCount);
-    //     return false;
-    // }
-
     if (frames.size() == FRAMES_MAX) {
         runtimeError("Stack overflow.\n");
         return false;
@@ -551,7 +542,21 @@ bool VM::beginCall(ObjFunction* function, int argCount) {
     return true;
 }
 
+void VM::returnFromFunction(int startSlot, int returnSlots) {
+    // Rewrites stack removing all slots up to startSlot plus
+    // also leaves remaining return value on the stack
 
+    auto stackSize = stack.size();
+    for (int i = 0; i < returnSlots; i++) {
+        // |     |     |     |     |     |     |
+        //             ^- locals --^- return --^
+        //             ^-- startSlot           ^
+        //                                     ^-- size
+        stack[startSlot + i] = stack[stackSize - returnSlots + i];
+    }
+
+    stack.resize(startSlot + returnSlots);
+}
 
 bool VM::callValue(Value callee) {
     return callee.visit(overloaded {
@@ -564,28 +569,18 @@ bool VM::callValue(Value callee) {
             auto parameterTypes = functionTypeData->parameterTypes;
             int argCount = parameterTypes.size();
             native->function(this, argCount);
-            // for (int i = 0; i < argCount; i++) { pop(); }
+            
+            // argSlots should be on the function object?
             int slots = 0;
             for (Type paramType : parameterTypes) {
                 slots += slotSizeOfType(paramType);
             }
-            auto returnSlots = slotSizeOfType(functionTypeData->returnType);
+            int returnSlots = slotSizeOfType(functionTypeData->returnType);
+            returnFromFunction(
+                stack.size() - slots - returnSlots,
+                returnSlots
+            );
 
-            auto stackSize = stack.size();
-            for (int i = 0; i < returnSlots; i++) {
-                // |    |    |    |    |    |    |
-                //           ^- slots- ^- return-^
-                //                               ^-- size
-                stack[stackSize - slots - returnSlots + i] = stack[stackSize - returnSlots + i];
-            }
-
-            auto slotsDiff = slots - returnSlots;
-
-            while (slotsDiff > 0) {
-                pop<uint32_t>(); slotsDiff --;
-            }
-            // pop();
-            // push(result);
             return true;
         },
         [&](auto value) -> bool {
