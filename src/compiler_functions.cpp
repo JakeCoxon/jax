@@ -271,23 +271,55 @@ void Parser::lambdaContents() {
 }
 
 
-Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl) {
+Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl) {
 
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
+
+    // Setup a temporary local for the return value.
+    int returnLocalId = -1;
+    if (funDecl->returnType != types::Void) {
+        // I'm not too sure about this stuff, do we want
+        // to keep the AST as the _language_ syntax tree,
+        // not the C target syntax tree? Maybe the returns
+        // are kept but with goto data attached to it, and
+        // this data is transformed only when we generate
+        // the C output. This would imply that the functions
+        // aren't inlined at this point, but the AST points
+        // to the functions declarations. This would be
+        // useful if we allow the AST to be modified by the
+        // program.
+
+        // TODO: generate a unique name here
+        std::string *generatedName = new std::string("__inlined_return_value"); // @leak
+        initialCompiler->declareVariable(this, *generatedName);
+        returnLocalId = initialCompiler->locals.size() - 1;
+        Local &local = initialCompiler->locals.back();
+        local.type = funDecl->returnType;
+        initialCompiler->markInitialized();
+
+        ast->varDeclaration(local, false);
+    }
 
     // TODO: Any sub-compilers from this point will have
     // enclosingCompiler = parser->compiler, which will be
     // the following newCompiler, but the lifetime of this
     // compiler ends at the end of this scope. This compiler
     // is inlined so really the enclosingCompiler should be
-    // parser->compiler->inlinedFrom
+    // parser->compiler->inlinedFrom. How do we see this
+    // problem in action?
     // TODO: Why is function needed here? Why is function
     // needed in compiler at all? just for bytecode?
-    Compiler newCompiler(function, CompilerType::Function, funDecl->enclosingCompiler);
+    Compiler newCompiler(function, compilerType, funDecl->enclosingCompiler);
+    newCompiler.returnType = funDecl->returnType;
     newCompiler.inlinedFrom = this->compiler;
     newCompiler.inlinedFromTop = this->compiler->inlinedFromTop;
     newCompiler.nextStackOffset = this->compiler->nextStackOffset;
+    if (funDecl->returnType != types::Void) {
+        newCompiler.inlinedReturnLocalId = returnLocalId;
+        // TODO: generate a unique name here
+        newCompiler.inlinedReturnLabel = "__return_label";
+    }
 
 
     // Handle function parameters before we switch to the
@@ -352,8 +384,13 @@ Type Parser::inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl)
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
 
+    if (funDecl->returnType != types::Void) {
+        ast->labelStatement(newCompiler.inlinedReturnLabel);
+        compiler->expressionTypeStack.push_back(funDecl->returnType);
+        ast->variable(&initialCompiler->locals[returnLocalId]);
+    }
 
-    return newCompiler.implicitReturnType;
+    return newCompiler.returnType;
 }
 
 bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount) {
@@ -404,9 +441,8 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         // semantically they should return from this function,
         // but they currently return from the outer function.
         // We should add a goto.
-        inlineFunction(function, functionDeclaration);
-        compiler->expressionTypeStack.push_back(types::Void);
-        ast->unit();
+
+        inlineFunction(CompilerType::Function, function, functionDeclaration);
         return;
     }
 
@@ -472,7 +508,7 @@ void Parser::callLambda(ExpressionState es) {
     // our stack offsets are misaligned.
     vmWriter->exprStatement();
 
-    Type implicitReturnType = inlineFunction(&function, funDecl);
+    Type implicitReturnType = inlineFunction(CompilerType::Lambda, &function, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
 

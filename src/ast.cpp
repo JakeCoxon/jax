@@ -98,9 +98,17 @@ struct Block {
 struct ExprStatement {
     Expr *expr = nullptr;
 };
+struct GotoStatement {
+    std::string label;
+};
+struct LabelStatement {
+    std::string label;
+};
 
 struct Statement {
-    mpark::variant<PrintStatement, IfStatement, ReturnStatement, WhileStatement, Block, ExprStatement> variant;
+    mpark::variant<PrintStatement, IfStatement, ReturnStatement,
+        WhileStatement, Block, ExprStatement, GotoStatement,
+        LabelStatement> variant;
 };
 
 struct Declaration {
@@ -205,6 +213,7 @@ struct AstGen {
         expressionStack.push_back(expr);
     }
     void variable(Local *local) {
+        assert(parser->compiler->expressionTypeStack.back() == local->type);
         auto expr = newExpr();
         auto var = makeVariant<VariableLiteral>(expr);
         expr->type = parser->compiler->expressionTypeStack.back();
@@ -341,6 +350,20 @@ struct AstGen {
         auto stmt = makeVariant<Statement>(decl);
         auto retStmt = makeVariant<ReturnStatement>(stmt);
         retStmt->expr = isNil ? nullptr : popExpression();
+    }
+
+    void gotoStatement(std::string label) {
+        auto decl = pushNewDeclaration();
+        auto stmt = makeVariant<Statement>(decl);
+        auto gotoStmt = makeVariant<GotoStatement>(stmt);
+        gotoStmt->label = label;
+    }
+
+    void labelStatement(std::string label) {
+        auto decl = pushNewDeclaration();
+        auto stmt = makeVariant<Statement>(decl);
+        auto labelStmt = makeVariant<LabelStatement>(stmt);
+        labelStmt->label = label;
     }
 
     IfStatement *beginIfStatementBlock() {
@@ -650,6 +673,12 @@ struct CodeGen {
                 ss << "return ";
                 if (ret.expr) addExpr(ret.expr, false);
                 ss << ";" << endl;
+            },
+            [&](GotoStatement &gotoStmt) {
+                ss << "goto " << gotoStmt.label << ";" << endl;
+            },
+            [&](LabelStatement &labelStmt) {
+                ss << labelStmt.label << ": ;" << endl;
             },
             [&](WhileStatement &whileStmt) {
                 ss << "while (";

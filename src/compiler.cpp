@@ -19,7 +19,7 @@ enum class Precedence {
 };
 
 enum class CompilerType {
-    Function, Script,
+    Script, Function, Lambda
 };
 
 struct Local {
@@ -117,7 +117,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    Type inlineFunction(ObjFunction *function, FunctionDeclaration *funDecl);
+    Type inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl);
     FunctionInstantiation *getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount);
     void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
     FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
@@ -193,7 +193,15 @@ struct Compiler {
     int nextStackOffset = 0;
     bool compiled = false;
 
-    Type implicitReturnType = nullptr;
+    Type returnType = nullptr;
+    // Whether to keep track of expression statement return types
+    // for use in lambda return values
+    bool implicitReturnType = false;
+    // Which local from the inlinedFrom compiler is used for
+    // returning values. Only used for inlining and if there
+    // is actually a return type.
+    int inlinedReturnLocalId = -1;
+    std::string inlinedReturnLabel;
 
     Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
             : function(function), type(type), enclosing(enclosing), inlinedFromTop(this) {
@@ -678,7 +686,9 @@ void Parser::statement() {
     // statement resets this type and expressionStatement
     // will set it, leaving the last one as the correct type.
     // Performance could suffer doing it this way?
-    compiler->implicitReturnType = nullptr;
+    if (compiler->implicitReturnType) {
+        compiler->returnType = nullptr;
+    }
     
     if (match(TokenType::Print)) {
         printStatement();
@@ -727,20 +737,55 @@ void Parser::printStatement() {
 }
 
 void Parser::returnStatement() {
+    
+    int returnLocalId = compiler->inlinedReturnLocalId;
+    if (returnLocalId > -1 && isBytecode) {
+        assert(0 && "Not supported yet");
+    }
+
     if (compiler->type == CompilerType::Script) {
         error("Can't return from top-level code.");
     }
+
+    Compiler *functionCompiler = compiler;
+    while (functionCompiler->type != CompilerType::Function && functionCompiler->inlinedFrom) {
+        functionCompiler = functionCompiler->inlinedFrom;
+    }
+    
+    bool returnedValue = false;
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
-        typecheckReturnNil(this, compiler->inlinedFromTop->function);
-        if (isBytecode) vmWriter->returnStatement(true);
-        else ast->returnStatement(true);
+        typecheckReturnNil(this, functionCompiler);
     } else {
+        returnedValue = true;
+        if (returnLocalId > -1) {
+            // TODO: Is this compiler->inlinedFrom or functionCompiler ????
+            Local &returnLocal = compiler->inlinedFrom->locals[returnLocalId];
+            compiler->expressionTypeStack.push_back(returnLocal.type);
+            ast->variable(&returnLocal);
+            // Pop this to keep the number of types at the end of a
+            // statement at 1, when inlining. typecheckReturn below
+            // will push the correct type again.
+            compiler->expressionTypeStack.pop_back();
+        }
+
         expression();
         consumeEndStatement("Expect ';' or newline after return value");
-        typecheckReturn(this, compiler->inlinedFromTop->function);
-        if (isBytecode) vmWriter->returnStatement(false);
-        else ast->returnStatement(false);
+        typecheckReturn(this, functionCompiler);
+
+        if (returnLocalId > -1) {
+            ast->assignment();
+            ast->exprStatement();
+        }
     }
+
+    if (returnLocalId > -1) {
+        assert(compiler->inlinedReturnLabel.size());
+        ast->gotoStatement(compiler->inlinedReturnLabel);
+    } else {
+        if (isBytecode) vmWriter->returnStatement(returnedValue);
+        else ast->returnStatement(returnedValue);
+    }
+    
 
 }
 
@@ -751,7 +796,9 @@ void Parser::expressionStatement() {
     if (isBytecode) vmWriter->exprStatement();
     else ast->exprStatement();
 
-    compiler->implicitReturnType = compiler->expressionTypeStack.back();
+    if (compiler->implicitReturnType) {
+        compiler->returnType = compiler->expressionTypeStack.back();
+    }
     typecheckEndStatement(this);
 }
 
@@ -833,6 +880,9 @@ void Parser::varDeclaration() {
     }
 
     compiler->locals.back().type = type;
+    // Locals might change after expression() is called due to
+    // function inlining, so record the ID and look it up later
+    int localId = compiler->locals.size() - 1;
 
     bool initializer = false;
     if (match(TokenType::Equal)) {
@@ -846,13 +896,13 @@ void Parser::varDeclaration() {
     consumeEndStatement("Expect ';' or newline after variable declaration.");
 
     if (initializer) {
-        typecheckVarDeclarationInitializer(this, compiler->locals.back());
+        typecheckVarDeclarationInitializer(this, compiler->locals[localId]);
     }
     compiler->markInitialized();
 
     // Nothing happens the VM - it is just left on the stack
     if (!isBytecode) {
-        ast->varDeclaration(compiler->locals.back(), initializer);
+        ast->varDeclaration(compiler->locals[localId], initializer);
     }
 }
 

@@ -56,8 +56,9 @@ void typecheckInit(Parser *parser) {
 }
 
 void typecheckPop(Parser *parser) {
-    if (parser->compiler->expressionTypeStack.size() == 0) {
-        parser->error("Type stack was 0.");
+    size_t s = parser->compiler->expressionTypeStack.size();
+    if (s != 1) {
+        parser->error("There was " + std::to_string(s) + " types at the end of the stactement but there should be just 1. This is indicative of a compiler error mishandling the type stack");
     } else {
         parser->compiler->expressionTypeStack.pop_back();
     }
@@ -359,19 +360,15 @@ void typecheckEndFunctionCall(Parser *parser, Value function, int argCount) {
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);
 }
 
-void typecheckReturn(Parser *parser, ObjFunction *function) {
+void typecheckReturn(Parser *parser, Compiler *functionCompiler) {
     Type returnStatementType = parser->compiler->expressionTypeStack.back();
-    auto functionTypeObj = function->type->functionTypeData();
-
-    if (!typecheckIsAssignable(parser, functionTypeObj->returnType, returnStatementType)) {
+    if (!typecheckIsAssignable(parser, functionCompiler->returnType, returnStatementType)) {
         parser->error("Type mismatch");
     }
     typecheckEndStatement(parser);
 }
-void typecheckReturnNil(Parser *parser, ObjFunction *function) {
-    Type returnStatementType = parser->compiler->expressionTypeStack.back();
-    auto functionTypeObj = function->type->functionTypeData();
-    if (!typecheckIsAssignable(parser, functionTypeObj->returnType, types::Void)) {
+void typecheckReturnNil(Parser *parser, Compiler *functionCompiler) {
+    if (!typecheckIsAssignable(parser, functionCompiler->returnType, types::Void)) {
         parser->error("Type mismatch");
     }
 }
