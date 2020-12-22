@@ -101,3 +101,24 @@ assert(params_blk(1,2,3) == 7)
   }
   assert(count == 10)
 }
+
+{
+  fun ints_range(start: number, end: number, f: lambda): number @inline {
+    var j = start
+    while true {
+      f(j)
+      j = j + 1
+      if j > end {
+        return j
+      }
+    }
+  }
+  
+  fun testing() {
+    var x = ints_range(1, 10) { |i|
+      print(i)
+    }
+    print("Finish")
+  }
+  testing()
+}

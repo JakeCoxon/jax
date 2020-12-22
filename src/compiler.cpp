@@ -56,7 +56,7 @@ struct FunctionInstantiation {
 struct FunctionDeclaration {
     std::string_view name;
     std::vector<FunctionParameter> parameters;
-    Type returnType;
+    Type returnType = types::Unknown;
 
     Compiler *enclosingCompiler;
     std::vector<FunctionInstantiation> overloads;
@@ -117,7 +117,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    Type inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl);
+    Type inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl, bool implicitReturn);
     FunctionInstantiation *getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount);
     void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
     FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
@@ -198,10 +198,14 @@ struct Compiler {
     // for use in lambda return values
     bool implicitReturnType = false;
     // Which local from the inlinedFrom compiler is used for
-    // returning values. Only used for inlining and if there
-    // is actually a return type.
+    // returning values. Only used for inlining. This may be
+    // used even if there is no return statements because we don't
+    // actually know the return type until we've compiled the
+    // whole function.
     int inlinedReturnLocalId = -1;
     std::string inlinedReturnLabel;
+    // For uniquely naming goto statements
+    int numInlinedReturns = 0;
 
     Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
             : function(function), type(type), enclosing(enclosing), inlinedFromTop(this) {
@@ -333,7 +337,7 @@ void Compiler::handleRenames(Parser *parser, Local &newLocal) {
     if (foundLocal) {
         foundLocal->renamedFromNum ++;
         std::ostringstream str;
-        str << "_shadow_" << newLocal.name;
+        str << newLocal.name << "_shadow";
         if (foundLocal->renamedFromNum > 1) {
             str << foundLocal->renamedFromNum;
         }
@@ -687,7 +691,7 @@ void Parser::statement() {
     // will set it, leaving the last one as the correct type.
     // Performance could suffer doing it this way?
     if (compiler->implicitReturnType) {
-        compiler->returnType = nullptr;
+        compiler->returnType = types::Unknown;
     }
     
     if (match(TokenType::Print)) {
@@ -748,8 +752,8 @@ void Parser::returnStatement() {
     }
 
     Compiler *functionCompiler = compiler;
-    while (functionCompiler->type != CompilerType::Function && functionCompiler->inlinedFrom) {
-        functionCompiler = functionCompiler->inlinedFrom;
+    while (functionCompiler->enclosing && functionCompiler->type != CompilerType::Function) {
+        functionCompiler = functionCompiler->enclosing;
     }
     
     bool returnedValue = false;
@@ -880,9 +884,6 @@ void Parser::varDeclaration() {
     }
 
     compiler->locals.back().type = type;
-    // Locals might change after expression() is called due to
-    // function inlining, so record the ID and look it up later
-    int localId = compiler->locals.size() - 1;
 
     bool initializer = false;
     if (match(TokenType::Equal)) {
@@ -895,14 +896,19 @@ void Parser::varDeclaration() {
     }
     consumeEndStatement("Expect ';' or newline after variable declaration.");
 
+    // Locals might change after expression() is called due to
+    // function inlining, so don't reuse the reference to it,
+    // but regardless we keep the uninitialized local at the
+    // end of the locals stack
+
     if (initializer) {
-        typecheckVarDeclarationInitializer(this, compiler->locals[localId]);
+        typecheckVarDeclarationInitializer(this, compiler->locals.back());
     }
     compiler->markInitialized();
 
     // Nothing happens the VM - it is just left on the stack
     if (!isBytecode) {
-        ast->varDeclaration(compiler->locals[localId], initializer);
+        ast->varDeclaration(compiler->locals.back(), initializer);
     }
 }
 
@@ -1134,10 +1140,12 @@ void Parser::stringAdvanced(StringParseFlags spf) {
                     vmWriter->doubleToString();
                 }
             } else {
+                compiler->expressionTypeStack.push_back(local->type);
                 ast->variable(local);
                 if (local->type == types::Bool) {
                     ast->functionCallNative("_bool_to_string", 1);
                 }
+                compiler->expressionTypeStack.pop_back();
             }
 
             if (local->type == types::Number) ss << "%f";
@@ -1352,6 +1360,8 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
         if (es.canAssign && match(TokenType::Equal)) {
             expression();
             typecheckAssignExpression(this);
+            // TODO: WARNING!! local may have changed at this pointer
+            // due to inlining
             if (isBytecode) vmWriter->namedVariable(local, true);
             else ast->assignment();
         } else {

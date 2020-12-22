@@ -345,11 +345,11 @@ struct AstGen {
         exprStmt->expr = popExpression();
     }
 
-    void returnStatement(bool isNil) {
+    void returnStatement(bool returnedValue) {
         auto decl = pushNewDeclaration();
         auto stmt = makeVariant<Statement>(decl);
         auto retStmt = makeVariant<ReturnStatement>(stmt);
-        retStmt->expr = isNil ? nullptr : popExpression();
+        retStmt->expr = returnedValue ? popExpression() : nullptr;
     }
 
     void gotoStatement(std::string label) {
@@ -394,6 +394,7 @@ struct AstGen {
         varDecl->name = local.renamedTo.size() ? std::string_view(local.renamedTo) : local.name;
         varDecl->value = initializer ? popExpression() : nullptr;
         varDecl->type = local.type;
+        assert(varDecl->type);
     }
 
     void print() {

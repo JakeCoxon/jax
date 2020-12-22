@@ -57,8 +57,8 @@ void typecheckInit(Parser *parser) {
 
 void typecheckPop(Parser *parser) {
     size_t s = parser->compiler->expressionTypeStack.size();
-    if (s != 1) {
-        parser->error("There was " + std::to_string(s) + " types at the end of the stactement but there should be just 1. This is indicative of a compiler error mishandling the type stack");
+    if (s == 0) {
+        parser->error("Expected at least 1 type on the stack.");
     } else {
         parser->compiler->expressionTypeStack.pop_back();
     }
@@ -76,10 +76,9 @@ bool typecheckIsAssignable(Parser *parser, Type typeA, Type typeB) {
 
 void typecheckEndStatement(Parser *parser) {
     typecheckPop(parser);
-    if (parser->compiler->expressionTypeStack.size() != 0) {
-        std::string err = "Programmer error. There was this many types on the stack: ";
-        err += std::to_string(parser->compiler->expressionTypeStack.size());
-        parser->error(err);
+    int s = parser->compiler->expressionTypeStack.size();
+    if (s != 0) {
+        parser->error("There was " + std::to_string(s) + " types at the end of the statement but there should be just 1. This is indicative of a compiler error mishandling the type stack");
         parser->compiler->expressionTypeStack.clear();
     }
 }
@@ -197,6 +196,7 @@ bool typecheckIsBinaryStrings(Parser *parser) {
 }
 
 void typecheckBinary(Parser *parser, TokenType operatorType) {
+    assert(parser->compiler->expressionTypeStack.size() >= 2);
     Compiler *compiler = parser->compiler;
     Type typeB = compiler->expressionTypeStack.back();
     compiler->expressionTypeStack.pop_back();
@@ -210,6 +210,9 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
     };
 
     auto assertEqual = [&]() {
+        if (typeA == types::Void) {
+            parser->error("Type cannot be void.");
+        }
         if (typeA != typeB) { 
             parser->error("Types don't match");
         }

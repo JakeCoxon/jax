@@ -26,6 +26,7 @@ FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *function
     // TODO: Garbage collection
     auto newFunction = new ObjFunction();
     Compiler *compiler = new Compiler(newFunction, CompilerType::Function, functionDeclaration->enclosingCompiler); // @leak
+    compiler->returnType = functionDeclaration->returnType;
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
     // TODO: Garbage collection
@@ -215,6 +216,10 @@ void Parser::funDeclaration() {
 
 
 void Parser::lambda(ExpressionState es) {
+    // Small function because this must conform to the
+    // parser expression interface but also we want to
+    // reuse lambdaContents again
+
     // This must be a static variable
     // if (!isBytecode) {
     //     error("Not supported yet");
@@ -240,6 +245,7 @@ void Parser::lambdaContents() {
     decl->enclosingCompiler = this->compiler;
     decl->isExtern = false;
     decl->constant = makeConstant(function);
+    decl->returnType = types::Unknown;
 
     function->functionDeclaration = decl;
 
@@ -271,35 +277,11 @@ void Parser::lambdaContents() {
 }
 
 
-Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl) {
+Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl, bool implicitReturn) {
 
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
 
-    // Setup a temporary local for the return value.
-    int returnLocalId = -1;
-    if (funDecl->returnType != types::Void) {
-        // I'm not too sure about this stuff, do we want
-        // to keep the AST as the _language_ syntax tree,
-        // not the C target syntax tree? Maybe the returns
-        // are kept but with goto data attached to it, and
-        // this data is transformed only when we generate
-        // the C output. This would imply that the functions
-        // aren't inlined at this point, but the AST points
-        // to the functions declarations. This would be
-        // useful if we allow the AST to be modified by the
-        // program.
-
-        // TODO: generate a unique name here
-        std::string *generatedName = new std::string("__inlined_return_value"); // @leak
-        initialCompiler->declareVariable(this, *generatedName);
-        returnLocalId = initialCompiler->locals.size() - 1;
-        Local &local = initialCompiler->locals.back();
-        local.type = funDecl->returnType;
-        initialCompiler->markInitialized();
-
-        ast->varDeclaration(local, false);
-    }
 
     // TODO: Any sub-compilers from this point will have
     // enclosingCompiler = parser->compiler, which will be
@@ -315,11 +297,64 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
     newCompiler.inlinedFrom = this->compiler;
     newCompiler.inlinedFromTop = this->compiler->inlinedFromTop;
     newCompiler.nextStackOffset = this->compiler->nextStackOffset;
-    if (funDecl->returnType != types::Void) {
-        newCompiler.inlinedReturnLocalId = returnLocalId;
-        // TODO: generate a unique name here
-        newCompiler.inlinedReturnLabel = "__return_label";
+    newCompiler.implicitReturnType = implicitReturn;
+
+    // Setup a temporary local on the _newCompiler_ for
+    // the return value.
+    int returnLocalId = -1;
+    VarDeclaration *varDecl = nullptr;
+    bool makeInlineGoto = true;
+
+    Compiler *enclosingFunction = &newCompiler;
+    while (enclosingFunction->type == CompilerType::Lambda) {
+        assert(enclosingFunction->enclosing);
+        enclosingFunction = enclosingFunction->enclosing;
     }
+
+    if (!enclosingFunction->inlinedFrom) {
+        // We don't need to remake return statements if
+        // the enclosing compile is not inlined, in this
+        // case regular returns will work
+        makeInlineGoto = false;
+    }
+    if (makeInlineGoto) {
+        // I'm not too sure about this stuff, do we want
+        // to keep the AST as the _language_ syntax tree,
+        // not the C target syntax tree? Maybe the returns
+        // are kept but with goto data attached to it, and
+        // this data is transformed only when we generate
+        // the C output. This would imply that the functions
+        // aren't inlined at this point, but the AST points
+        // to the functions declarations. This would be
+        // useful if we allow the AST to be modified by the
+        // program.
+
+        // TODO: enclosingFunction->numInlinedReturns is not right
+        // it must be the topLevelInline I think?
+
+        enclosingFunction->numInlinedReturns ++;
+        std::string *generatedName = new std::string(
+            "__inlined_return_value" + std::to_string(
+                enclosingFunction->numInlinedReturns)); // @leak
+        newCompiler.declareVariable(this, *generatedName);
+        // This will only work if param arg indexes aren't
+        // hardcoded anywhere
+        returnLocalId = newCompiler.locals.size() - 1;
+        Local &local = newCompiler.locals.back();
+        assert(funDecl->returnType);
+        local.type = funDecl->returnType;
+        newCompiler.markInitialized();
+        // but of a hack but don't want endScope to remove this
+        newCompiler.scopeDepth ++;
+
+        ast->varDeclaration(local, false);
+        varDecl = &mpark::get<VarDeclaration>(ast->currentBlock->lastDeclaration->variant);
+    
+        newCompiler.inlinedReturnLocalId = returnLocalId;
+        newCompiler.inlinedReturnLabel = "__return_label" + 
+            std::to_string(enclosingFunction->numInlinedReturns);
+    }
+
 
 
     // Handle function parameters before we switch to the
@@ -384,17 +419,42 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
 
-    if (funDecl->returnType != types::Void) {
-        ast->labelStatement(newCompiler.inlinedReturnLabel);
-        compiler->expressionTypeStack.push_back(funDecl->returnType);
-        ast->variable(&initialCompiler->locals[returnLocalId]);
+    auto finalReturnType = newCompiler.returnType;
+    if (finalReturnType == types::Unknown) {
+        // This happens when implicitReturn and there was no
+        // expression statement at the end of the function.
+        // In which case imply void return type.
+        assert(implicitReturn);
+        finalReturnType = types::Void;
+    }
+    if (makeInlineGoto) {
+        newCompiler.locals[returnLocalId].type = finalReturnType;
+    }
+    compiler->expressionTypeStack.push_back(finalReturnType);
+
+    if (implicitReturn) {
+        if (makeInlineGoto) {
+            varDecl->type = finalReturnType;
+        }
+        ast->makeImplicitReturn();
+        
+    } else {
+        if (makeInlineGoto) {
+            ast->labelStatement(newCompiler.inlinedReturnLabel);
+            ast->variable(&newCompiler.locals[returnLocalId]);
+        } else {
+            ast->unit();
+            // Make a unit so statements have something to cling
+            // on to
+        }
     }
 
     return newCompiler.returnType;
 }
 
 bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount) {
-    // Returns true if we found an argument - must continue to loop.
+    // Returns true if we found an argument - in which case caller
+    // must continue to loop.
 
     if (!match(TokenType::RightParen)) {
         // This is a bit hacky, I want a better state machine
@@ -442,7 +502,9 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         // but they currently return from the outer function.
         // We should add a goto.
 
-        inlineFunction(CompilerType::Function, function, functionDeclaration);
+        inlineFunction(
+            CompilerType::Function, function, functionDeclaration,
+            /* implicitReturn */ false);
         return;
     }
 
@@ -507,14 +569,13 @@ void Parser::callLambda(ExpressionState es) {
     // BTW we do this before inlining of the function, because otherwise
     // our stack offsets are misaligned.
     vmWriter->exprStatement();
+    compiler->expressionTypeStack.pop_back(); // the lambda type
 
-    Type implicitReturnType = inlineFunction(CompilerType::Lambda, &function, funDecl);
+    inlineFunction(
+        CompilerType::Lambda, &function, funDecl,
+        /* implicitReturn */ true);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
 
-
-    compiler->expressionTypeStack.pop_back(); // the lambda itself
-    compiler->expressionTypeStack.push_back(implicitReturnType);
-    ast->makeImplicitReturn();
 
 }
