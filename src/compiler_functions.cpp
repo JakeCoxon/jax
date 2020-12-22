@@ -277,11 +277,29 @@ void Parser::lambdaContents() {
 }
 
 
-Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl, bool implicitReturn) {
+Type Parser::inlineFunction(CompilerType compilerType,
+        ObjFunction *function, FunctionDeclaration *funDecl,
+        bool implicitReturn) {
 
+    // There are a number of different compiler structs
+    // referenced in this function, it can be quite
+    // confusing.
+    // 1. initialCompiler is the immediate parent function
+    //    or lambda compiler that we are inlining _into_
+    //    but its not necessarily the top-most function
+    //    that we are inlining into.
+    // 2. The top-most one is inlinedFromTop which is used
+    //    to track the numInlinedReturns so we can uniquely
+    //    refer to return locals and gotos.
+    // 3. newCompiler is the compiler we create for the
+    //    function that we are actually inlining, it will
+    //    have its own locals etc.
+    // 4. funDecl->enclosingCompiler is just passed to
+    //    newCompiler as usual so the code can track the
+    //    lexical scope.
+    
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
-
 
     // TODO: Any sub-compilers from this point will have
     // enclosingCompiler = parser->compiler, which will be
@@ -303,20 +321,16 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
     // the return value.
     int returnLocalId = -1;
     VarDeclaration *varDecl = nullptr;
-    bool makeInlineGoto = true;
+    bool makeInlineGoto = false;
 
-    Compiler *enclosingFunction = &newCompiler;
-    while (enclosingFunction->type == CompilerType::Lambda) {
-        assert(enclosingFunction->enclosing);
-        enclosingFunction = enclosingFunction->enclosing;
+    if (compilerType == CompilerType::Function) {
+        // We want to remap return statements into a 
+        // combination of assigning to a return value and 
+        // a goto, but only if this is a function - lambda
+        // literals cannot be returned from
+        makeInlineGoto = true;
     }
-
-    if (!enclosingFunction->inlinedFrom) {
-        // We don't need to remake return statements if
-        // the enclosing compile is not inlined, in this
-        // case regular returns will work
-        makeInlineGoto = false;
-    }
+    int returnId;
     if (makeInlineGoto) {
         // I'm not too sure about this stuff, do we want
         // to keep the AST as the _language_ syntax tree,
@@ -329,13 +343,11 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
         // useful if we allow the AST to be modified by the
         // program.
 
-        // TODO: enclosingFunction->numInlinedReturns is not right
-        // it must be the topLevelInline I think?
-
-        enclosingFunction->numInlinedReturns ++;
+        newCompiler.inlinedFromTop->numInlinedReturns ++;
+        returnId = newCompiler.inlinedFromTop->numInlinedReturns;
         std::string *generatedName = new std::string(
             "__inlined_return_value" + std::to_string(
-                enclosingFunction->numInlinedReturns)); // @leak
+                newCompiler.inlinedFromTop->numInlinedReturns)); // @leak
         newCompiler.declareVariable(this, *generatedName);
         // This will only work if param arg indexes aren't
         // hardcoded anywhere
@@ -352,10 +364,8 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
     
         newCompiler.inlinedReturnLocalId = returnLocalId;
         newCompiler.inlinedReturnLabel = "__return_label" + 
-            std::to_string(enclosingFunction->numInlinedReturns);
+            std::to_string(newCompiler.inlinedFromTop->numInlinedReturns);
     }
-
-
 
     // Handle function parameters before we switch to the
     // new compiler. The compiler methods should be written
@@ -363,8 +373,8 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
     // is currently active.
     // The reason for fetching the arguments in an iterator
     // style instead of fetching them all at once is because
-    // its easier to deal with things on the top of stack
-    // one-by-one
+    // it means all our type checking can be written to just
+    // deal with things on the top of stack.
     function->argSlots = 0;
     size_t argCount = 0;
     while (argumentListNext(funDecl, &argCount)) {
@@ -428,27 +438,31 @@ Type Parser::inlineFunction(CompilerType compilerType, ObjFunction *function, Fu
         finalReturnType = types::Void;
     }
     if (makeInlineGoto) {
+        // Hack because C won't compile a void variable lets make
+        // it number because I'm lazy right right now - in the
+        // future this should just not be added to the AST.
+        // Rethink producing an AST with this granularity
+        if (finalReturnType == types::Void) {
+            finalReturnType = types::Number;
+        }
         newCompiler.locals[returnLocalId].type = finalReturnType;
+        varDecl->type = finalReturnType;
     }
     compiler->expressionTypeStack.push_back(finalReturnType);
 
-    if (implicitReturn) {
-        if (makeInlineGoto) {
-            varDecl->type = finalReturnType;
-        }
-        ast->makeImplicitReturn();
-        
+    if (makeInlineGoto) {
+        ast->labelStatement(newCompiler.inlinedReturnLabel);
+        ast->variable(&newCompiler.locals[returnLocalId]);
     } else {
-        if (makeInlineGoto) {
-            ast->labelStatement(newCompiler.inlinedReturnLabel);
-            ast->variable(&newCompiler.locals[returnLocalId]);
-        } else {
-            ast->unit();
-            // Make a unit so statements have something to cling
-            // on to
-        }
+        // Make a unit so statements have something to cling
+        // on to
+        ast->unit();
     }
 
+    if (implicitReturn) {
+        ast->makeImplicitReturn();
+    } 
+        
     return newCompiler.returnType;
 }
 
@@ -497,11 +511,6 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     if (functionDeclaration->isInline && !functionDeclaration->isStatic) {
         // TODO: Why is function needed here?
         ObjFunction *function = new ObjFunction();
-        // TODO: We need to do something about returns,
-        // semantically they should return from this function,
-        // but they currently return from the outer function.
-        // We should add a goto.
-
         inlineFunction(
             CompilerType::Function, function, functionDeclaration,
             /* implicitReturn */ false);

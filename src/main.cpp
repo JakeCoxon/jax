@@ -68,7 +68,7 @@ static int runFile(CompileOptions compileOptions, const std::string &path) {
     myfile.close();
 
 
-    int res = system("clang -Wunused-value output.c -o output");
+    int res = system("clang -Wno-unused-value output.c -o output");
     double everythingTime = clock_ms() - startTime;
 
     if (res != 0) return res;

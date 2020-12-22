@@ -103,6 +103,8 @@ assert(params_blk(1,2,3) == 7)
 }
 
 {
+  // Test range function
+
   fun ints_range(start: number, end: number, f: lambda): number @inline {
     var j = start
     while true {
@@ -114,11 +116,62 @@ assert(params_blk(1,2,3) == 7)
     }
   }
   
-  fun testing() {
-    var x = ints_range(1, 10) { |i|
-      print(i)
-    }
-    print("Finish")
+  var total = 0
+  ints_range(1, 10) { |i|
+    total = total + i
   }
-  testing()
+  assert(total == 55)
+}
+
+{
+  // pythagoras triples using lazy sequences as seen from
+  // https://github.com/aardappel/lobster/blob/master/samples/lazy_py_triples.lobster
+
+  fun ints(start: number, f: lambda) @inline {
+    while true {
+      f(start)
+      start = start + 1
+    }
+  }
+
+  fun ints_range(start: number, end: number, f: lambda) @inline {
+    var j = start
+    while j <= end {
+      f(j)
+      j = j + 1
+    }
+  }
+
+  fun take(n: number, gen: lambda) @inline {
+    var i = 0
+    gen() { |iterate|
+      iterate()
+      i = i + 1
+      if i >= n {
+        return
+      }
+    }
+  }
+
+  fun py_triples(count: number, foo: lambda) @inline {
+    take(count) { |yield|
+      ints(1) { |z|
+        ints_range(1, z) { |x|
+          ints_range(x, z) { |y|
+            if x * x + y * y == z * z {
+              yield() {
+                foo(x, y, z)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  var sum = 0
+  py_triples(100) { |x, y, z|
+    sum = sum + x * y * z
+  }
+  assert(sum == 54056100)
 }

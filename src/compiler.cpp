@@ -742,18 +742,20 @@ void Parser::printStatement() {
 
 void Parser::returnStatement() {
     
-    int returnLocalId = compiler->inlinedReturnLocalId;
-    if (returnLocalId > -1 && isBytecode) {
-        assert(0 && "Not supported yet");
-    }
-
     if (compiler->type == CompilerType::Script) {
         error("Can't return from top-level code.");
     }
 
+    // We want to return from the nearest enclosing _function_
+    // rather than lambda.
     Compiler *functionCompiler = compiler;
     while (functionCompiler->enclosing && functionCompiler->type != CompilerType::Function) {
         functionCompiler = functionCompiler->enclosing;
+    }
+
+    int returnLocalId = functionCompiler->inlinedReturnLocalId;
+    if (returnLocalId > -1 && isBytecode) {
+        assert(0 && "Not supported yet");
     }
     
     bool returnedValue = false;
@@ -763,7 +765,7 @@ void Parser::returnStatement() {
         returnedValue = true;
         if (returnLocalId > -1) {
             // TODO: Is this compiler->inlinedFrom or functionCompiler ????
-            Local &returnLocal = compiler->inlinedFrom->locals[returnLocalId];
+            Local &returnLocal = functionCompiler->locals[returnLocalId];
             compiler->expressionTypeStack.push_back(returnLocal.type);
             ast->variable(&returnLocal);
             // Pop this to keep the number of types at the end of a
@@ -783,8 +785,8 @@ void Parser::returnStatement() {
     }
 
     if (returnLocalId > -1) {
-        assert(compiler->inlinedReturnLabel.size());
-        ast->gotoStatement(compiler->inlinedReturnLabel);
+        assert(functionCompiler->inlinedReturnLabel.size());
+        ast->gotoStatement(functionCompiler->inlinedReturnLabel);
     } else {
         if (isBytecode) vmWriter->returnStatement(returnedValue);
         else ast->returnStatement(returnedValue);
