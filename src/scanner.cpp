@@ -21,7 +21,7 @@ enum class TokenType {
     For, Fun, If, Nil, Or,
     Print, Return, Super, This,
     True, Var, While, Block,
-    Static,
+    Static, In,
 
     Newline,
     Error,
@@ -209,7 +209,14 @@ TokenType Scanner::identifierType() {
                 }
             }
             break;
-        case 'i': return checkKeyword(1, "f", TokenType::If);
+        case 'i':
+            if (current - start > 1) {
+                switch (source[start + 1]) {
+                    case 'f': return checkKeyword(2, "", TokenType::If);
+                    case 'n': return checkKeyword(2, "", TokenType::In);
+                }
+            }
+            break;
         case 'n': return checkKeyword(1, "il", TokenType::Nil);
         case 'o': return checkKeyword(1, "r", TokenType::Or);
         case 'p': return checkKeyword(1, "rint", TokenType::Print);
@@ -228,6 +235,7 @@ TokenType Scanner::identifierType() {
                         break;
                 }
             }
+            break;
         case 't': 
             if (current - start > 1) {
                 switch (source[start + 1]) {

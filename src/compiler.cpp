@@ -65,6 +65,7 @@ struct FunctionDeclaration {
     bool isExtern = false;
     bool isInline = false;
     bool isStatic = false;
+    bool hasLambdas = false;
     
     size_t constant;
     size_t blockStart;
@@ -137,6 +138,7 @@ struct Parser {
     void expressionStatement();
     void ifStatement();
     void whileStatement();
+    void forStatement();
     void varDeclaration();
     void expression();
     void block();
@@ -702,6 +704,8 @@ void Parser::statement() {
         returnStatement();
     } else if (match(TokenType::While)) {
         whileStatement();
+    } else if (match(TokenType::For)) {
+        forStatement();
     } else if (match(TokenType::LeftBrace)) {
         beginScope();
         if (!isBytecode) ast->beginBlock();
@@ -862,6 +866,77 @@ void Parser::whileStatement() {
     endScope();
 
     if (isBytecode) vmWriter->endWhileStatementBlock(&patchState);
+
+    consumeEndStatement("Expect ';' or newline after block.");
+}
+
+void Parser::forStatement() {
+    if (isBytecode) {
+        error("Not implemented yet.");
+    }
+    // WhileStatementPatchState patchState;
+    // if (isBytecode) { patchState = vmWriter->beginWhileStatementBlock(); }
+    
+    consume(TokenType::Identifier, "Expect identifier after 'for'.");
+    Token nameToken = previous();
+
+    consume(TokenType::In, "Expect 'in' after identifier.");
+    expression();
+
+    consume(TokenType::LeftBrace, "Expect '{' after expression.");
+
+    auto function = new ObjFunction(); // @leak
+    function->name = new ObjString("for loop line " + std::to_string(scanner->line)); // @leak
+
+    auto decl = new FunctionDeclaration; // @leak
+    decl->name = std::string_view(function->name->text);
+    // decl->parameters = parameters;
+    decl->returnType = types::Void;
+    decl->polymorphic = true;
+    decl->enclosingCompiler = this->compiler;
+    decl->isExtern = false;
+    decl->constant = makeConstant(function);
+
+    function->functionDeclaration = decl;
+
+    // Will be AFTER the left brace and parameter list
+    decl->blockStart = scanner->start;
+    decl->blockLine = scanner->line;
+
+    int braces = 0;
+    while ((braces > 0 || !check(TokenType::RightBrace)) && !check(TokenType::EOF_)) {
+        if (match(TokenType::LeftBrace)) braces ++;
+        else if (match(TokenType::RightBrace)) braces --;
+        else advance();
+    }
+    consume(TokenType::RightBrace, "Expect '}' after block");
+
+    // ^ can be reusable
+
+    decl->parameters.push_back({ nameToken.text, types::Unknown, false });
+    function->arity = decl->parameters.size();
+
+    vmWriter->emitConstant(decl->constant);
+
+    typecheckLambda(this);
+
+    auto functionDeclaration = compiler->resolveFunctionDeclaration("iterate");
+    callFunction(functionDeclaration);
+
+
+
+
+
+
+    // beginScope();
+    // if (!isBytecode) ast->beginWhileStatementBlock();
+    // typecheckIfCondition(this);
+
+    // block();
+    // if (!isBytecode) ast->endBlock();
+    // endScope();
+
+    // if (isBytecode) vmWriter->endWhileStatementBlock(&patchState);
 
     consumeEndStatement("Expect ';' or newline after block.");
 }
@@ -1438,6 +1513,7 @@ ParseRule rules[] = {
     {nullptr,           nullptr,           Precedence::None},       // While
     {&Parser::lambda,   nullptr,           Precedence::None},       // Block
     {nullptr,           nullptr,           Precedence::None},       // Static
+    {nullptr,           nullptr,           Precedence::None},       // In
     {nullptr,           nullptr,           Precedence::None},       // Newline
     {nullptr,           nullptr,           Precedence::None},       // Error
     {nullptr,           nullptr,           Precedence::None},       // Eof

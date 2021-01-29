@@ -74,11 +74,13 @@ static int runFile(CompileOptions compileOptions, const std::string &path) {
     if (res != 0) return res;
 
     double startRuntime = clock_ms();
+    printf("\n\n");
     int programResult = system("./output");
 
     if (programResult != 0) return programResult;
 
     double runTime = clock_ms() - startRuntime;
+    printf("\n\n\n");
     printf("Compile to c string: %fms\n", compileTime);
     printf("File op + c compile: %fms\n", (everythingTime - compileTime));
     printf("           Run time: %fms\n", runTime);

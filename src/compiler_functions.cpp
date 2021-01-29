@@ -136,6 +136,7 @@ void Parser::functionParameters(FunctionDeclaration *decl) {
 
         decl->parameters.push_back({ parameterName, argumentType });
         if (argumentType == types::Lambda) {
+            decl->hasLambdas = true;
             decl->parameters.back().isStatic = true;
         }
         if (argumentType == types::Unknown) {
@@ -193,6 +194,10 @@ void Parser::funDeclaration() {
             error("Unrecognised at-name");
             return;
         }
+    }
+
+    if (decl->hasLambdas && !decl->isInline) {
+        error("Functions taking lambdas must be declared inline.");
     }
     
     if (decl->isExtern) return;
@@ -257,7 +262,7 @@ void Parser::lambdaContents() {
     }
     function->arity = decl->parameters.size();
 
-    // Must be AFTER the left brace / parameter list
+    // Must be AFTER the left brace and parameter list
     decl->blockStart = scanner->start;
     decl->blockLine = scanner->line;
 
@@ -407,7 +412,7 @@ Type Parser::inlineFunction(CompilerType compilerType,
 
     // Run the VM. We don't _have_ to do this here but it makes debugging
     // easier if we know what the stack is at this point. Also I suppose
-    // we wan't to run any sideeffects that function arguments might have.
+    // we want to run any sideeffects that function arguments might have.
     vmWriter->vm.run();
 
     Scanner tempScanner { initialScanner->source };
