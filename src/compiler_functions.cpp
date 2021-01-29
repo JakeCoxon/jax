@@ -284,6 +284,12 @@ void Parser::lambdaContents() {
 
 size_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
 
+    // Calls to static functions must have static arguments
+    bool wasBytecode = isBytecode;
+    if (functionDeclaration->isStatic) {
+        isBytecode = true;
+    }
+
     size_t argCount = 0;
 
     while (!match(TokenType::RightParen)) {
@@ -309,6 +315,11 @@ size_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
 
     if (argCount != functionDeclaration->parameters.size()) {
         error("Not enough arguments for this function.");
+    }
+
+
+    if (functionDeclaration->isStatic) {
+        isBytecode = wasBytecode;
     }
 
     return argCount;
@@ -525,25 +536,11 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         newCompiler.inlinedFromTop = compiler->inlinedFromTop;
         newCompiler.nextStackOffset = compiler->nextStackOffset;
 
-        argumentList(functionDeclaration);
         inlineFunction(&newCompiler, functionDeclaration);
         return;
     }
 
-    typecheckBeginFunctionCall(this, nullptr);
-
-    // Calls to static functions must have static arguments
-    bool wasBytecode = isBytecode;
-    if (functionDeclaration->isStatic) {
-        isBytecode = true;
-    }
-
-    size_t argCount = argumentList(functionDeclaration);
-
-    if (functionDeclaration->isStatic) {
-        isBytecode = wasBytecode;
-    }
-
+    size_t argCount = functionDeclaration->parameters.size();
     auto inst = getInstantiationByStackArguments(functionDeclaration, argCount);
     if (!inst) {
         inst = createInstantiation(functionDeclaration);

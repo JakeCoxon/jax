@@ -924,10 +924,8 @@ void Parser::forStatement() {
     typecheckLambda(this);
 
     auto functionDeclaration = compiler->resolveFunctionDeclaration("iterate");
+    argumentList(functionDeclaration);
     callFunction(functionDeclaration);
-
-
-
 
 
 
@@ -1459,6 +1457,7 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
         }
 
         if (match(TokenType::LeftParen)) {
+            argumentList(functionDeclaration);
             callFunction(functionDeclaration);
         } else {
             error("Cannot reference function without calling it (yet).");

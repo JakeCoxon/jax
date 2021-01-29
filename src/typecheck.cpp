@@ -348,9 +348,6 @@ void typecheckFunctionArgument(Parser *parser, FunctionDeclaration *functionDecl
     }
 }
 
-void typecheckBeginFunctionCall(Parser *parser, ObjFunction *function) {
-    parser->compiler->expressionTypeStack.push_back(types::Void);
-}
 void typecheckEndFunctionCall(Parser *parser, Value function, int argCount) {
     for (int i = 0; i < argCount; i++) {
         typecheckPop(parser);
@@ -363,7 +360,6 @@ void typecheckEndFunctionCall(Parser *parser, Value function, int argCount) {
             return types::Void;
         }
     });
-    parser->compiler->expressionTypeStack.pop_back();
     auto functionTypeObj = functionType->functionTypeData();
     parser->compiler->expressionTypeStack.push_back(functionTypeObj->returnType);
 }
