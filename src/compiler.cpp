@@ -165,7 +165,7 @@ struct Parser {
 
     void lambdaContents();
     void functionParameters(FunctionDeclaration *functionDeclaration);
-    size_t argumentList(Compiler *newCompiler, FunctionDeclaration *funDecl);
+    size_t argumentList(FunctionDeclaration *funDecl);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
 

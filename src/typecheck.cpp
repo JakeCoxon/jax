@@ -83,6 +83,11 @@ void typecheckEndStatement(Parser *parser) {
     }
 }
 
+void typecheckReverseLastNumTypes(Parser *parser, size_t num) {
+    // :ReverseStack
+    std::reverse(parser->compiler->expressionTypeStack.end() - num, parser->compiler->expressionTypeStack.end());
+}
+
 void typecheckIfCondition(Parser *parser) {
     // Anything can work here?
     typecheckPop(parser);

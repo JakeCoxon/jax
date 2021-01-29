@@ -282,45 +282,9 @@ void Parser::lambdaContents() {
 }
 
 
-size_t Parser::argumentList(Compiler *compiler, FunctionDeclaration *functionDeclaration) {
-    auto function = compiler->function;
-
-    // Compiler gets passed here because in the case of
-    // inlining functions, we don't update this->compiler
-    // until later.
-
-    if (compiler->inlinedFrom) {
-        function->argSlots = 0;
-    }
+size_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
 
     size_t argCount = 0;
-
-    // If the compiler is inlined, then we need to handle
-    // setting up locals here too
-    // Turns out this isn't very nice, can we move it back
-    // to inlineFunction?
-    auto setupLocalForInlinedFunction = [&]() {
-        auto param = functionDeclaration->parameters[argCount - 1];
-        compiler->declareVariable(this, param.name);
-        Local &local = compiler->locals.back();
-        local.isStatic = param.isStatic;
-
-        local.type = param.type;
-        typecheckVarDeclarationInitializer(this, local);
-        // markInitialized after typecheck incase isStatic
-        // has changed
-        compiler->markInitialized();
-
-        
-        if (!local.isStatic) {
-            ast->varDeclaration(local, /* initializer */ true);
-        } else {
-            // Nothing happens in the VM - it is just left on
-            // the stack but we should record the total slot size
-            int slotSize = slotSizeOfType(compiler->locals.back().type);
-            function->argSlots += slotSize;
-        }
-    };
 
     while (!match(TokenType::RightParen)) {
         if (argCount > 0) {
@@ -335,19 +299,12 @@ size_t Parser::argumentList(Compiler *compiler, FunctionDeclaration *functionDec
 
         typecheckFunctionArgument(this, functionDeclaration, argCount);
         argCount ++;
-
-        if (compiler->inlinedFrom) {
-            setupLocalForInlinedFunction();
-        }
-
     }
-
 
     if (match(TokenType::LeftBrace)) {
         lambdaContents();
         typecheckFunctionArgument(this, functionDeclaration, argCount);
         argCount ++;
-        setupLocalForInlinedFunction();
     }
 
     if (argCount != functionDeclaration->parameters.size()) {
@@ -391,6 +348,43 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
     // TODO: Why is function needed here? Why is function
     // needed in compiler at all? just for bytecode?
 
+    // :ReverseStack
+    // This is used because the argument list has already been
+    // parsed in forwards order, but we want to build the AST
+    // using the familiar popExpression() and typechecking
+    // functions. Reversing the function arguments means we
+    // will pop in forwards order.
+    size_t numNonStaticExpressions = 0;
+    for (size_t i = 0; i < funDecl->parameters.size(); i++) {
+        if (!funDecl->parameters[i].isStatic) {
+            numNonStaticExpressions ++;
+        }
+    }
+    ast->reverseLastNumExpressions(numNonStaticExpressions);
+    typecheckReverseLastNumTypes(this, funDecl->parameters.size());
+
+    newCompiler->function->argSlots = 0;
+    for (size_t i = 0; i < funDecl->parameters.size(); i++) {
+        auto param = funDecl->parameters[i];
+        newCompiler->declareVariable(this, param.name);
+        Local &local = newCompiler->locals.back();
+        local.isStatic = param.isStatic;
+
+        local.type = param.type;
+        typecheckVarDeclarationInitializer(this, local);
+        // markInitialized after typecheck incase isStatic
+        // has changed
+        newCompiler->markInitialized();
+        
+        if (!local.isStatic) {
+            ast->varDeclaration(local, /* initializer */ true);
+        } else {
+            // Nothing happens in the VM - it is just left on
+            // the stack but we should record the total slot size
+            int slotSize = slotSizeOfType(newCompiler->locals.back().type);
+            newCompiler->function->argSlots += slotSize;
+        }
+    }
     
 
     // Setup a temporary local on the _newCompiler_ for
@@ -531,7 +525,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         newCompiler.inlinedFromTop = compiler->inlinedFromTop;
         newCompiler.nextStackOffset = compiler->nextStackOffset;
 
-        argumentList(&newCompiler, functionDeclaration);
+        argumentList(functionDeclaration);
         inlineFunction(&newCompiler, functionDeclaration);
         return;
     }
@@ -544,7 +538,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         isBytecode = true;
     }
 
-    size_t argCount = argumentList(compiler, functionDeclaration);
+    size_t argCount = argumentList(functionDeclaration);
 
     if (functionDeclaration->isStatic) {
         isBytecode = wasBytecode;
@@ -604,7 +598,7 @@ void Parser::callLambda(ExpressionState es) {
     newCompiler.inlinedFromTop = compiler->inlinedFromTop;
     newCompiler.nextStackOffset = compiler->nextStackOffset;
 
-    argumentList(&newCompiler, funDecl);
+    argumentList(funDecl);
     inlineFunction(&newCompiler, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?

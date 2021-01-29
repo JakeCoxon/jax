@@ -196,6 +196,12 @@ struct AstGen {
         return expr;
     }
 
+    void reverseLastNumExpressions(size_t num) {
+        // :ReverseStack
+        assert(expressionStack.size() >= num);
+        std::reverse(expressionStack.end() - num, expressionStack.end());
+    }
+
     // Expressions
 
     void string(Token name) {
