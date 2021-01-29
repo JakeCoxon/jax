@@ -282,34 +282,34 @@ void Parser::lambdaContents() {
 }
 
 
-void Parser::argumentListForInlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl) {
-    auto function = newCompiler->function;
+size_t Parser::argumentList(Compiler *compiler, FunctionDeclaration *functionDeclaration) {
+    auto function = compiler->function;
 
-    // Handle function parameters before we switch to the
-    // new compiler. The compiler methods should be written
-    // in a way to not make an assumption on which compiler
-    // is currently active.
-    // The reason for fetching the arguments in an iterator
-    // style instead of fetching them all at once is because
-    // it means all our type checking can be written to just
-    // deal with things on the top of stack.
+    // Compiler gets passed here because in the case of
+    // inlining functions, we don't update this->compiler
+    // until later.
 
-    // TODO: Possibly merge in argumentListNext since we don't
-    // like that function anyway?
+    if (compiler->inlinedFrom) {
+        function->argSlots = 0;
+    }
 
-    function->argSlots = 0;
     size_t argCount = 0;
-    while (argumentListNext(funDecl, &argCount)) {
-        auto param = funDecl->parameters[argCount - 1];
-        newCompiler->declareVariable(this, param.name);
-        Local &local = newCompiler->locals.back();
+
+    // If the compiler is inlined, then we need to handle
+    // setting up locals here too
+    // Turns out this isn't very nice, can we move it back
+    // to inlineFunction?
+    auto setupLocalForInlinedFunction = [&]() {
+        auto param = functionDeclaration->parameters[argCount - 1];
+        compiler->declareVariable(this, param.name);
+        Local &local = compiler->locals.back();
         local.isStatic = param.isStatic;
 
         local.type = param.type;
         typecheckVarDeclarationInitializer(this, local);
         // markInitialized after typecheck incase isStatic
         // has changed
-        newCompiler->markInitialized();
+        compiler->markInitialized();
 
         
         if (!local.isStatic) {
@@ -317,16 +317,46 @@ void Parser::argumentListForInlineFunction(Compiler *newCompiler, FunctionDeclar
         } else {
             // Nothing happens in the VM - it is just left on
             // the stack but we should record the total slot size
-            int slotSize = slotSizeOfType(newCompiler->locals.back().type);
+            int slotSize = slotSizeOfType(compiler->locals.back().type);
             function->argSlots += slotSize;
         }
+    };
+
+    while (!match(TokenType::RightParen)) {
+        if (argCount > 0) {
+            consume(TokenType::Comma, "Expect ',' or ')' after argument");
+        }
+        expression();
+
+        if (argCount == 255) {
+            error("Can't have more than 255 arguments.");
+            return 0;
+        }
+
+        typecheckFunctionArgument(this, functionDeclaration, argCount);
+        argCount ++;
+
+        if (compiler->inlinedFrom) {
+            setupLocalForInlinedFunction();
+        }
+
     }
 
-    if (argCount != funDecl->parameters.size()) {
-        error("Not enough arguments for this function.");
-        return;
+
+    if (match(TokenType::LeftBrace)) {
+        lambdaContents();
+        typecheckFunctionArgument(this, functionDeclaration, argCount);
+        argCount ++;
+        setupLocalForInlinedFunction();
     }
+
+    if (argCount != functionDeclaration->parameters.size()) {
+        error("Not enough arguments for this function.");
+    }
+
+    return argCount;
 }
+
 
 Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl) {
 
@@ -483,41 +513,6 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
     return newCompiler->returnType;
 }
 
-bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount) {
-    // Returns true if we found an argument - in which case caller
-    // must continue to loop.
-
-    if (!match(TokenType::RightParen)) {
-        // This is a bit hacky, I want a better state machine
-        if (!check(TokenType::Comma) && previous().type == TokenType::RightBrace) {
-            return false;
-        }
-
-        if (*argCount > 0) {
-            consume(TokenType::Comma, "Expect ',' or ')' after argument");
-        }
-
-        expression();
-        if (*argCount == 255) {
-            error("Can't have more than 255 arguments.");
-            return false;
-        }
-        typecheckFunctionArgument(this, functionDeclaration, *argCount);
-        (*argCount) ++;
-        return true;
-    }
-
-    // Matched right paren at this point
-
-    if (match(TokenType::LeftBrace)) {
-        lambdaContents();
-        typecheckFunctionArgument(this, functionDeclaration, *argCount);
-        (*argCount) ++;
-        return true;
-    }
-    return false;
-}
-
 void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     
     if (isBytecode && (!functionDeclaration->isStatic && !functionDeclaration->isExtern)) {
@@ -536,7 +531,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         newCompiler.inlinedFromTop = compiler->inlinedFromTop;
         newCompiler.nextStackOffset = compiler->nextStackOffset;
 
-        argumentListForInlineFunction(&newCompiler, functionDeclaration);
+        argumentList(&newCompiler, functionDeclaration);
         inlineFunction(&newCompiler, functionDeclaration);
         return;
     }
@@ -549,10 +544,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         isBytecode = true;
     }
 
-    size_t argCount = 0;
-    while (argumentListNext(functionDeclaration, &argCount)) {
-        continue;
-    }
+    size_t argCount = argumentList(compiler, functionDeclaration);
 
     if (functionDeclaration->isStatic) {
         isBytecode = wasBytecode;
@@ -612,7 +604,7 @@ void Parser::callLambda(ExpressionState es) {
     newCompiler.inlinedFromTop = compiler->inlinedFromTop;
     newCompiler.nextStackOffset = compiler->nextStackOffset;
 
-    argumentListForInlineFunction(&newCompiler, funDecl);
+    argumentList(&newCompiler, funDecl);
     inlineFunction(&newCompiler, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
