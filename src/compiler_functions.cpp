@@ -366,27 +366,33 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
     // functions. Reversing the function arguments means we
     // will pop in forwards order.
     size_t numNonStaticExpressions = 0;
-    for (size_t i = 0; i < funDecl->parameters.size(); i++) {
-        if (!funDecl->parameters[i].isStatic) {
-            numNonStaticExpressions ++;
-        }
-    }
-    ast->reverseLastNumExpressions(numNonStaticExpressions);
     typecheckReverseLastNumTypes(this, funDecl->parameters.size());
 
-    newCompiler->function->argSlots = 0;
     for (size_t i = 0; i < funDecl->parameters.size(); i++) {
+
         auto param = funDecl->parameters[i];
         newCompiler->declareVariable(this, param.name);
         Local &local = newCompiler->locals.back();
         local.isStatic = param.isStatic;
-
         local.type = param.type;
         typecheckVarDeclarationInitializer(this, local);
-        // markInitialized after typecheck incase isStatic
-        // has changed
+
+        // markInitialized after typecheck incase isStatic has changed
+        // due to arg being infered as lambda
         newCompiler->markInitialized();
-        
+
+        if (!local.isStatic) {
+            numNonStaticExpressions ++;
+        }
+    }
+
+    ast->reverseLastNumExpressions(numNonStaticExpressions);
+    
+
+    newCompiler->function->argSlots = 0;
+    for (size_t i = 0; i < funDecl->parameters.size(); i++) {
+        Local &local = newCompiler->locals[i];
+
         if (!local.isStatic) {
             ast->varDeclaration(local, /* initializer */ true);
         } else {
@@ -413,6 +419,8 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
     }
 
     int returnId;
+    Local inlinedReturnLocal = { "", -1, -1 };
+
     if (makeInlineGoto) {
         // I'm not too sure about this stuff, do we want
         // to keep the AST as the _language_ syntax tree,
@@ -425,33 +433,20 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
         // useful if we allow the AST to be modified by the
         // program.
 
-        // I just had a thought - do we even need to use a
-        // local for this? Can't we just store the name on
-        // the compiler object?
-
         newCompiler->inlinedFromTop->numInlinedReturns ++;
         returnId = newCompiler->inlinedFromTop->numInlinedReturns;
         std::string *generatedName = new std::string(
             "__inlined_return_value" + std::to_string(
                 newCompiler->inlinedFromTop->numInlinedReturns)); // @leak
-        newCompiler->declareVariable(this, *generatedName);
-        // This will only work if param arg indexes aren't
-        // hardcoded anywhere, because we're shifting all
-        // local indices up. So if something goes wrong with
-        // that it's probably this.
-        returnLocalId = newCompiler->locals.size() - 1;
-        Local &local = newCompiler->locals.back();
-        assert(funDecl->returnType);
-        local.type = funDecl->returnType;
-        newCompiler->markInitialized();
-        // We had this before for some reason: It can't work any more
-        // but I don't remember why it was there in the first place
-        // newCompiler->scopeDepth ++;
 
-        ast->varDeclaration(local, false);
+        newCompiler->inlinedReturnLocal = &inlinedReturnLocal;
+        inlinedReturnLocal.name = *generatedName;
+        assert(funDecl->returnType);
+        inlinedReturnLocal.type = funDecl->returnType;
+
+        ast->varDeclaration(inlinedReturnLocal, false);
         returnLocalVarDecl = &mpark::get<VarDeclaration>(ast->currentBlock->lastDeclaration->variant);
     
-        newCompiler->inlinedReturnLocalId = returnLocalId;
         newCompiler->inlinedReturnLabel = "__return_label" + 
             std::to_string(newCompiler->inlinedFromTop->numInlinedReturns);
     }
@@ -497,24 +492,24 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
         if (finalReturnType == types::Void) {
             finalReturnType = types::Number;
         }
-        newCompiler->locals[returnLocalId].type = finalReturnType;
+        inlinedReturnLocal.type = finalReturnType;
         returnLocalVarDecl->type = finalReturnType;
     }
     compiler->expressionTypeStack.push_back(finalReturnType);
 
+    // We need a result expression regardless of whether it's used
+    // expressionStatement will consume it in any case.
     if (makeInlineGoto) {
         ast->labelStatement(newCompiler->inlinedReturnLabel);
-        ast->variable(&newCompiler->locals[returnLocalId]);
+        ast->variable(&inlinedReturnLocal);
+    } else if (newCompiler->implicitReturnType) {
+        ast->makeImplicitReturn();
     } else {
-        // Make a unit so statements have something to cling
-        // on to
+        // Make a unit so statements have something
+        // to cling on to
         ast->unit();
     }
 
-    if (newCompiler->implicitReturnType) {
-        ast->makeImplicitReturn();
-    } 
-        
     return newCompiler->returnType;
 }
 
@@ -549,7 +544,7 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
     }
     
     typecheckEndFunctionCall(this, inst->function, argCount);
-    
+
     if (functionDeclaration->isStatic || isBytecode) { 
         vmWriter->functionCall(*inst, argCount);
     } else ast->functionCall(*inst, argCount);

@@ -31,11 +31,17 @@ fun iterate(xs, f: lambda) @inline {
     i = i + 1
   }
 }
-iterate(xs) {|x| print(x)}
+// iterate(xs) {|x| print(x)}
 
-for x in xs {
-  print(x)
+fun do_some_stuff(xs) {
+  for x in xs {
+    print("x: $x")
+    if x == 2 {
+      return
+    }
+  }
 }
+do_some_stuff(xs)
 
 // /*
 // // Ideas ////

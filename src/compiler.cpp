@@ -205,6 +205,8 @@ struct Compiler {
     // actually know the return type until we've compiled the
     // whole function.
     int inlinedReturnLocalId = -1;
+    Local *inlinedReturnLocal = nullptr;
+    // Local inlinedReturnLocal;
     std::string inlinedReturnLabel;
     // For uniquely naming goto statements
     int numInlinedReturns = 0;
@@ -757,8 +759,8 @@ void Parser::returnStatement() {
         functionCompiler = functionCompiler->enclosing;
     }
 
-    int returnLocalId = functionCompiler->inlinedReturnLocalId;
-    if (returnLocalId > -1 && isBytecode) {
+    Local *inlinedReturnLocal = functionCompiler->inlinedReturnLocal;
+    if (inlinedReturnLocal && isBytecode) {
         assert(0 && "Not supported yet");
     }
     
@@ -767,14 +769,13 @@ void Parser::returnStatement() {
         typecheckReturnNil(this, functionCompiler);
     } else {
         willReturnValue = true;
-        if (returnLocalId > -1) {
+        if (inlinedReturnLocal) {
             // Here we want to assign the return value to a specified local
             // instead of emitting a return statement.
 
             // TODO: Is this compiler->inlinedFrom or functionCompiler ????
-            Local &returnLocal = functionCompiler->locals[returnLocalId];
-            compiler->expressionTypeStack.push_back(returnLocal.type);
-            ast->variable(&returnLocal);
+            compiler->expressionTypeStack.push_back(inlinedReturnLocal->type);
+            ast->variable(inlinedReturnLocal);
             // Pop this to keep the number of types at the end of a
             // statement at 1, when inlining. typecheckReturn below
             // will push the correct type again.
@@ -785,13 +786,13 @@ void Parser::returnStatement() {
         consumeEndStatement("Expect ';' or newline after return value");
         typecheckReturn(this, functionCompiler);
 
-        if (returnLocalId > -1) {
+        if (inlinedReturnLocal) {
             ast->assignment();
             ast->exprStatement();
         }
     }
 
-    if (returnLocalId > -1) {
+    if (inlinedReturnLocal) {
         assert(functionCompiler->inlinedReturnLabel.size());
         ast->gotoStatement(functionCompiler->inlinedReturnLabel);
     } else {
@@ -924,10 +925,12 @@ void Parser::forStatement() {
     typecheckLambda(this);
 
     auto functionDeclaration = compiler->resolveFunctionDeclaration("iterate");
-    argumentList(functionDeclaration);
     callFunction(functionDeclaration);
 
+    // For has no result, just treat it like an exprStatement
+    ast->exprStatement();
 
+    typecheckEndStatement(this);
 
     // beginScope();
     // if (!isBytecode) ast->beginWhileStatementBlock();
