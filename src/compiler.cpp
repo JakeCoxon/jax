@@ -118,7 +118,7 @@ struct Parser {
     void synchronize();
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
-    Type inlineFunction(CompilerType compilerType, ObjFunction *function, FunctionDeclaration *funDecl, bool implicitReturn);
+    Type inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl);
     FunctionInstantiation *getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount);
     void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
     FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
@@ -166,6 +166,7 @@ struct Parser {
     void lambdaContents();
     void functionParameters(FunctionDeclaration *functionDeclaration);
     bool argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount);
+    void argumentListForInlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl);
     void callFunction(FunctionDeclaration *functionDeclaration);
 
 
@@ -183,7 +184,7 @@ struct Parser {
 // stack and function declarations.
 struct Compiler {
     ObjFunction *function;
-    CompilerType type;
+    CompilerType compilerType;
     Compiler *enclosing = nullptr;
     Compiler *inlinedFrom = nullptr;
     Compiler *inlinedFromTop = nullptr;
@@ -209,8 +210,8 @@ struct Compiler {
     // For uniquely naming goto statements
     int numInlinedReturns = 0;
 
-    Compiler(ObjFunction *function, CompilerType type, Compiler *enclosing)
-            : function(function), type(type), enclosing(enclosing), inlinedFromTop(this) {
+    Compiler(ObjFunction *function, CompilerType compilerType, Compiler *enclosing)
+            : function(function), compilerType(compilerType), enclosing(enclosing), inlinedFromTop(this) {
     }
 
     int resolveLocal(const std::string_view &name);
@@ -534,7 +535,7 @@ void Parser::synchronize() {
 void Parser::initCompiler(Compiler *compiler) {
     this->compiler = compiler;
     // TODO: Garbage collection
-    if (compiler->type != CompilerType::Script) {
+    if (compiler->compilerType != CompilerType::Script) {
         compiler->function->name = new ObjString(std::string(previous().text));
     }
 
@@ -746,14 +747,14 @@ void Parser::printStatement() {
 
 void Parser::returnStatement() {
     
-    if (compiler->type == CompilerType::Script) {
+    if (compiler->compilerType == CompilerType::Script) {
         error("Can't return from top-level code.");
     }
 
     // We want to return from the nearest enclosing _function_
     // rather than lambda.
     Compiler *functionCompiler = compiler;
-    while (functionCompiler->enclosing && functionCompiler->type != CompilerType::Function) {
+    while (functionCompiler->enclosing && functionCompiler->compilerType != CompilerType::Function) {
         functionCompiler = functionCompiler->enclosing;
     }
 
@@ -762,12 +763,15 @@ void Parser::returnStatement() {
         assert(0 && "Not supported yet");
     }
     
-    bool returnedValue = false;
+    bool willReturnValue = false;
     if (match(TokenType::Semicolon) || match(TokenType::Newline)) {
         typecheckReturnNil(this, functionCompiler);
     } else {
-        returnedValue = true;
+        willReturnValue = true;
         if (returnLocalId > -1) {
+            // Here we want to assign the return value to a specified local
+            // instead of emitting a return statement.
+
             // TODO: Is this compiler->inlinedFrom or functionCompiler ????
             Local &returnLocal = functionCompiler->locals[returnLocalId];
             compiler->expressionTypeStack.push_back(returnLocal.type);
@@ -792,8 +796,8 @@ void Parser::returnStatement() {
         assert(functionCompiler->inlinedReturnLabel.size());
         ast->gotoStatement(functionCompiler->inlinedReturnLabel);
     } else {
-        if (isBytecode) vmWriter->returnStatement(returnedValue);
-        else ast->returnStatement(returnedValue);
+        if (isBytecode) vmWriter->returnStatement(willReturnValue);
+        else ast->returnStatement(willReturnValue);
     }
     
 

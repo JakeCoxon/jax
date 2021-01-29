@@ -282,9 +282,53 @@ void Parser::lambdaContents() {
 }
 
 
-Type Parser::inlineFunction(CompilerType compilerType,
-        ObjFunction *function, FunctionDeclaration *funDecl,
-        bool implicitReturn) {
+void Parser::argumentListForInlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl) {
+    auto function = newCompiler->function;
+
+    // Handle function parameters before we switch to the
+    // new compiler. The compiler methods should be written
+    // in a way to not make an assumption on which compiler
+    // is currently active.
+    // The reason for fetching the arguments in an iterator
+    // style instead of fetching them all at once is because
+    // it means all our type checking can be written to just
+    // deal with things on the top of stack.
+
+    // TODO: Possibly merge in argumentListNext since we don't
+    // like that function anyway?
+
+    function->argSlots = 0;
+    size_t argCount = 0;
+    while (argumentListNext(funDecl, &argCount)) {
+        auto param = funDecl->parameters[argCount - 1];
+        newCompiler->declareVariable(this, param.name);
+        Local &local = newCompiler->locals.back();
+        local.isStatic = param.isStatic;
+
+        local.type = param.type;
+        typecheckVarDeclarationInitializer(this, local);
+        // markInitialized after typecheck incase isStatic
+        // has changed
+        newCompiler->markInitialized();
+
+        
+        if (!local.isStatic) {
+            ast->varDeclaration(local, /* initializer */ true);
+        } else {
+            // Nothing happens in the VM - it is just left on
+            // the stack but we should record the total slot size
+            int slotSize = slotSizeOfType(newCompiler->locals.back().type);
+            function->argSlots += slotSize;
+        }
+    }
+
+    if (argCount != funDecl->parameters.size()) {
+        error("Not enough arguments for this function.");
+        return;
+    }
+}
+
+Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl) {
 
     // There are a number of different compiler structs
     // referenced in this function, it can be quite
@@ -306,35 +350,33 @@ Type Parser::inlineFunction(CompilerType compilerType,
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
 
+    // :ConfusingSubCompiler
     // TODO: Any sub-compilers from this point will have
     // enclosingCompiler = parser->compiler, which will be
     // the following newCompiler, but the lifetime of this
     // compiler ends at the end of this scope. This compiler
     // is inlined so really the enclosingCompiler should be
-    // parser->compiler->inlinedFrom. How do we see this
-    // problem in action?
+    // parser->compiler->inlinedFrom. It doesn't seem to be
+    // causing any issues - how do we observe this?
     // TODO: Why is function needed here? Why is function
     // needed in compiler at all? just for bytecode?
-    Compiler newCompiler(function, compilerType, funDecl->enclosingCompiler);
-    newCompiler.returnType = funDecl->returnType;
-    newCompiler.inlinedFrom = this->compiler;
-    newCompiler.inlinedFromTop = this->compiler->inlinedFromTop;
-    newCompiler.nextStackOffset = this->compiler->nextStackOffset;
-    newCompiler.implicitReturnType = implicitReturn;
+
+    
 
     // Setup a temporary local on the _newCompiler_ for
     // the return value.
     int returnLocalId = -1;
-    VarDeclaration *varDecl = nullptr;
+    VarDeclaration *returnLocalVarDecl = nullptr;
     bool makeInlineGoto = false;
 
-    if (compilerType == CompilerType::Function) {
+    if (newCompiler->compilerType == CompilerType::Function) {
         // We want to remap return statements into a 
         // combination of assigning to a return value and 
         // a goto, but only if this is a function - lambda
         // literals cannot be returned from
         makeInlineGoto = true;
     }
+
     int returnId;
     if (makeInlineGoto) {
         // I'm not too sure about this stuff, do we want
@@ -348,67 +390,37 @@ Type Parser::inlineFunction(CompilerType compilerType,
         // useful if we allow the AST to be modified by the
         // program.
 
-        newCompiler.inlinedFromTop->numInlinedReturns ++;
-        returnId = newCompiler.inlinedFromTop->numInlinedReturns;
+        // I just had a thought - do we even need to use a
+        // local for this? Can't we just store the name on
+        // the compiler object?
+
+        newCompiler->inlinedFromTop->numInlinedReturns ++;
+        returnId = newCompiler->inlinedFromTop->numInlinedReturns;
         std::string *generatedName = new std::string(
             "__inlined_return_value" + std::to_string(
-                newCompiler.inlinedFromTop->numInlinedReturns)); // @leak
-        newCompiler.declareVariable(this, *generatedName);
+                newCompiler->inlinedFromTop->numInlinedReturns)); // @leak
+        newCompiler->declareVariable(this, *generatedName);
         // This will only work if param arg indexes aren't
-        // hardcoded anywhere
-        returnLocalId = newCompiler.locals.size() - 1;
-        Local &local = newCompiler.locals.back();
+        // hardcoded anywhere, because we're shifting all
+        // local indices up. So if something goes wrong with
+        // that it's probably this.
+        returnLocalId = newCompiler->locals.size() - 1;
+        Local &local = newCompiler->locals.back();
         assert(funDecl->returnType);
         local.type = funDecl->returnType;
-        newCompiler.markInitialized();
-        // but of a hack but don't want endScope to remove this
-        newCompiler.scopeDepth ++;
+        newCompiler->markInitialized();
+        // We had this before for some reason: It can't work any more
+        // but I don't remember why it was there in the first place
+        // newCompiler->scopeDepth ++;
 
         ast->varDeclaration(local, false);
-        varDecl = &mpark::get<VarDeclaration>(ast->currentBlock->lastDeclaration->variant);
+        returnLocalVarDecl = &mpark::get<VarDeclaration>(ast->currentBlock->lastDeclaration->variant);
     
-        newCompiler.inlinedReturnLocalId = returnLocalId;
-        newCompiler.inlinedReturnLabel = "__return_label" + 
-            std::to_string(newCompiler.inlinedFromTop->numInlinedReturns);
+        newCompiler->inlinedReturnLocalId = returnLocalId;
+        newCompiler->inlinedReturnLabel = "__return_label" + 
+            std::to_string(newCompiler->inlinedFromTop->numInlinedReturns);
     }
 
-    // Handle function parameters before we switch to the
-    // new compiler. The compiler methods should be written
-    // in a way to not make an assumption on which compiler
-    // is currently active.
-    // The reason for fetching the arguments in an iterator
-    // style instead of fetching them all at once is because
-    // it means all our type checking can be written to just
-    // deal with things on the top of stack.
-    function->argSlots = 0;
-    size_t argCount = 0;
-    while (argumentListNext(funDecl, &argCount)) {
-        auto param = funDecl->parameters[argCount - 1];
-        newCompiler.declareVariable(this, param.name);
-        Local &local = newCompiler.locals.back();
-        local.isStatic = param.isStatic;
-
-        local.type = param.type;
-        typecheckVarDeclarationInitializer(this, local);
-        // markInitialized after typecheck incase isStatic
-        // has changed
-        newCompiler.markInitialized();
-                                       
-        
-        if (!local.isStatic) {
-            ast->varDeclaration(local, /* initializer */ true);
-        } else {
-            // Nothing happens in the VM - it is just left on
-            // the stack but we should record the total slot size
-            int slotSize = slotSizeOfType(newCompiler.locals.back().type);
-            function->argSlots += slotSize;
-        }
-    }
-
-    if (argCount != funDecl->parameters.size()) {
-        error("Not enough arguments for this function.");
-        return types::Void;
-    }
 
     // Run the VM. We don't _have_ to do this here but it makes debugging
     // easier if we know what the stack is at this point. Also I suppose
@@ -419,7 +431,7 @@ Type Parser::inlineFunction(CompilerType compilerType,
     tempScanner.current = funDecl->blockStart;
     tempScanner.start = funDecl->blockStart;
     tempScanner.line = funDecl->blockLine;
-    this->compiler = &newCompiler;
+    this->compiler = newCompiler;
     this->scanner = &tempScanner;
     advance();
 
@@ -434,12 +446,12 @@ Type Parser::inlineFunction(CompilerType compilerType,
     this->scanner = initialScanner;
     this->compiler = initialCompiler;
 
-    auto finalReturnType = newCompiler.returnType;
+    auto finalReturnType = newCompiler->returnType;
     if (finalReturnType == types::Unknown) {
         // This happens when implicitReturn and there was no
         // expression statement at the end of the function.
         // In which case imply void return type.
-        assert(implicitReturn);
+        assert(newCompiler->implicitReturnType);
         finalReturnType = types::Void;
     }
     if (makeInlineGoto) {
@@ -450,25 +462,25 @@ Type Parser::inlineFunction(CompilerType compilerType,
         if (finalReturnType == types::Void) {
             finalReturnType = types::Number;
         }
-        newCompiler.locals[returnLocalId].type = finalReturnType;
-        varDecl->type = finalReturnType;
+        newCompiler->locals[returnLocalId].type = finalReturnType;
+        returnLocalVarDecl->type = finalReturnType;
     }
     compiler->expressionTypeStack.push_back(finalReturnType);
 
     if (makeInlineGoto) {
-        ast->labelStatement(newCompiler.inlinedReturnLabel);
-        ast->variable(&newCompiler.locals[returnLocalId]);
+        ast->labelStatement(newCompiler->inlinedReturnLabel);
+        ast->variable(&newCompiler->locals[returnLocalId]);
     } else {
         // Make a unit so statements have something to cling
         // on to
         ast->unit();
     }
 
-    if (implicitReturn) {
+    if (newCompiler->implicitReturnType) {
         ast->makeImplicitReturn();
     } 
         
-    return newCompiler.returnType;
+    return newCompiler->returnType;
 }
 
 bool Parser::argumentListNext(FunctionDeclaration *functionDeclaration, size_t *argCount) {
@@ -515,10 +527,17 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
 
     if (functionDeclaration->isInline && !functionDeclaration->isStatic) {
         // TODO: Why is function needed here?
-        ObjFunction *function = new ObjFunction();
-        inlineFunction(
-            CompilerType::Function, function, functionDeclaration,
-            /* implicitReturn */ false);
+        ObjFunction *function = new ObjFunction(); // @leak
+        // :ConfusingSubCompiler
+        Compiler newCompiler(function, CompilerType::Function, functionDeclaration->enclosingCompiler);
+        newCompiler.implicitReturnType = false;
+        newCompiler.returnType = functionDeclaration->returnType;
+        newCompiler.inlinedFrom = compiler;
+        newCompiler.inlinedFromTop = compiler->inlinedFromTop;
+        newCompiler.nextStackOffset = compiler->nextStackOffset;
+
+        argumentListForInlineFunction(&newCompiler, functionDeclaration);
+        inlineFunction(&newCompiler, functionDeclaration);
         return;
     }
 
@@ -585,9 +604,16 @@ void Parser::callLambda(ExpressionState es) {
     vmWriter->exprStatement();
     compiler->expressionTypeStack.pop_back(); // the lambda type
 
-    inlineFunction(
-        CompilerType::Lambda, &function, funDecl,
-        /* implicitReturn */ true);
+    // :ConfusingSubCompiler
+    Compiler newCompiler(&function, CompilerType::Lambda, funDecl->enclosingCompiler);
+    newCompiler.implicitReturnType = true;
+    newCompiler.returnType = funDecl->returnType;
+    newCompiler.inlinedFrom = compiler;
+    newCompiler.inlinedFromTop = compiler->inlinedFromTop;
+    newCompiler.nextStackOffset = compiler->nextStackOffset;
+
+    argumentListForInlineFunction(&newCompiler, funDecl);
+    inlineFunction(&newCompiler, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?
 
