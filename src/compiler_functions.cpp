@@ -1,23 +1,86 @@
+template <typename T>
+struct span {
+    span(T* first, T* last) : begin_ {first}, end_ {last} {}
+    span(T* first, std::ptrdiff_t size)
+        : span {first, first + size} {}
+
+    T*  begin() const noexcept { return begin_; }
+    T*  end() const noexcept { return end_; }
+
+    T* begin_;
+    T* end_;
+};
+
+template <typename T>
+span<T> make_span(T* first, std::ptrdiff_t size) noexcept
+{ return {first, size}; }
 
 
 
-FunctionInstantiation *Parser::getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount) {
+FunctionInstantiation *getInstantiationByTypes(Parser *parser, FunctionDeclaration *functionDeclaration, span<Type> types) {
     // @speed slow as hell
-    for (size_t j = 0; j < functionDeclaration->overloads.size(); j++) {
-        auto inst = &functionDeclaration->overloads[j];
+    // We don't cache type parameters and we don't intern strings
+    for (size_t j = 0; j < functionDeclaration->overloadIndices.size(); j++) {
+        auto inst = parser->functionInstantiations[functionDeclaration->overloadIndices[j]];
         auto functionTypeObj = inst->type->functionTypeData();
 
         bool isMatched = true;
-        for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-            size_t end = compiler->expressionTypeStack.size();
-            Type argumentType = compiler->expressionTypeStack[end - argCount + i];
-            if (!typecheckIsAssignable(this, functionTypeObj->parameterTypes[i], argumentType)) {
-                isMatched = false; break;
+        size_t i = 0;
+        for (auto toMatchType : types) {
+        // for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
+            // size_t end = compiler->expressionTypeStack.size();
+            // Type argumentType = compiler->expressionTypeStack[end - argCount + i];
+
+            if (!typecheckIsAssignable(parser, functionTypeObj->parameterTypes[i], toMatchType)) {
+                isMatched = false;
+                break;
             }
+            i++;
         }
         if (isMatched) return inst;
     }
     return nullptr;
+}
+
+
+FunctionCall resolveFunctionCallByTypes(Parser *parser, Compiler *compiler, const std::string_view &name, span<Type> types) {
+    size_t argCount = types.end_ - types.begin_;
+    for (size_t i = 0; i < compiler->functionDeclarations.size(); i++) {
+        FunctionDeclaration *functionDeclaration = compiler->functionDeclarations[i];
+
+        if (functionDeclaration->parameters.size() != argCount) {
+            continue;
+        }
+        if (functionDeclaration->name != name) {
+            continue;
+        }
+
+
+        auto inst = getInstantiationByTypes(parser, functionDeclaration, types);
+        if (inst) {
+            return { functionDeclaration, inst, argCount };
+        } else {
+            // See if the declaration matches, in which case we have no
+            // instantiation, but we can make one
+
+            bool isMatched = true;
+            size_t i = 0;
+            for (auto toMatchType : types) {
+                if (functionDeclaration->parameters[i].type != types::Unknown &&
+                    !typecheckIsAssignable(parser, functionDeclaration->parameters[i].type, toMatchType)
+                ) {
+                    isMatched = false;
+                    break;
+                }
+                i++;
+            }
+            if (isMatched) {
+                return { functionDeclaration, nullptr, argCount };
+            }
+        }
+    }
+    if (compiler->enclosing) { return resolveFunctionCallByTypes(parser, compiler->enclosing, name, types); }
+    return {};
 }
 
 
@@ -30,31 +93,38 @@ FunctionInstantiation *Parser::createInstantiation(FunctionDeclaration *function
     auto functionType = typecheckFunctionDeclaration(this, newFunction);
 
     // TODO: Garbage collection
-    newFunction->name = new ObjString(std::string(functionDeclaration->name));
+    std::string originalName = std::string(functionDeclaration->name);
+    newFunction->name = new ObjString(originalName);
     newFunction->arity = functionDeclaration->parameters.size();
     newFunction->functionDeclaration = functionDeclaration;
 
     compiler->compiled = true; // Mark this so we don't recurse
 
-    int size = functionDeclaration->overloads.size() + 1;
-    std::string renamedTo = std::string(functionDeclaration->name);
+    auto [functionNameIt, added] = functionNames.try_emplace(originalName);
+
+    std::string renamedTo = originalName;
+    int size = functionNameIt->second.instantiationIndices.size() + 1;
     if (size > 1) {
         renamedTo += "__" + std::to_string(size);
     }
 
-    FunctionInstantiation functionInst = {
+    FunctionInstantiation *functionInst = new FunctionInstantiation {
         functionType, newFunction, compiler, functionDeclaration, renamedTo
-    };
-    functionDeclaration->overloads.push_back(functionInst);
+    }; // @leak
+    functionInstantiations.push_back(functionInst);
+    functionDeclaration->overloadIndices.push_back(functionInstantiations.size() - 1);
 
-    return &functionDeclaration->overloads.back();
+    
+    functionNameIt->second.instantiationIndices.push_back(functionInstantiations.size() - 1);
+
+    return functionInst;
 }
 
-void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
+void Parser::compileFunctionInstantiation(FunctionInstantiation *functionInst) {
     
-    FunctionDeclaration *functionDeclaration = functionInst.declaration;
-    ObjFunction* newFunction = &functionInst.function.asFunction();
-    Type functionType = functionInst.type;
+    FunctionDeclaration *functionDeclaration = functionInst->declaration;
+    ObjFunction* newFunction = &functionInst->function.asFunction();
+    Type functionType = functionInst->type;
 
     if (functionDeclaration->isExtern) {
         typecheckFunctionDeclarationReturnValue(this, newFunction, functionType, functionDeclaration->returnType);
@@ -64,7 +134,7 @@ void Parser::compileFunctionInstantiation(FunctionInstantiation &functionInst) {
     Compiler *initialCompiler = this->compiler;
     Scanner *initialScanner = this->scanner;
     auto functionTypeObj = functionType->functionTypeData();
-    Compiler *compiler = functionInst.compiler;
+    Compiler *compiler = functionInst->compiler;
 
     // We need to update the nextStackOffset of the new compiler
     // to be the same as the one that we were _called from_ (not
@@ -282,13 +352,14 @@ void Parser::lambdaContents() {
 }
 
 
-size_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
+size_t Parser::argumentList() {
 
     // Calls to static functions must have static arguments
-    bool wasBytecode = isBytecode;
-    if (functionDeclaration->isStatic) {
-        isBytecode = true;
-    }
+    // TODO: This is quite difficult with function overloading
+    // bool wasBytecode = isBytecode;
+    // if (functionDeclaration->isStatic) {
+    //     isBytecode = true;
+    // }
 
     size_t argCount = 0;
 
@@ -303,24 +374,25 @@ size_t Parser::argumentList(FunctionDeclaration *functionDeclaration) {
             return 0;
         }
 
-        typecheckFunctionArgument(this, functionDeclaration, argCount);
+        // typecheckFunctionArgument(this, functionDeclaration, argCount);
         argCount ++;
     }
 
     if (match(TokenType::LeftBrace)) {
         lambdaContents();
-        typecheckFunctionArgument(this, functionDeclaration, argCount);
+        // typecheckFunctionArgument(this, functionDeclaration, argCount);
         argCount ++;
     }
 
-    if (argCount != functionDeclaration->parameters.size()) {
-        error("Not enough arguments for this function.");
-    }
+    // if (argCount != functionDeclaration->parameters.size()) {
+    //     error("Not enough arguments for this function.");
+    // }
 
 
-    if (functionDeclaration->isStatic) {
-        isBytecode = wasBytecode;
-    }
+    // TODO: see above
+    // if (functionDeclaration->isStatic) {
+    //     isBytecode = wasBytecode;
+    // }
 
     return argCount;
 }
@@ -513,7 +585,10 @@ Type Parser::inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl)
     return newCompiler->returnType;
 }
 
-void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
+void Parser::callFunction(FunctionCall call) {
+
+    auto functionDeclaration = call.declaration;
+    auto inst = call.instantiation;
     
     if (isBytecode && (!functionDeclaration->isStatic && !functionDeclaration->isExtern)) {
         error("Cannot call a static function from runtime.");
@@ -535,19 +610,17 @@ void Parser::callFunction(FunctionDeclaration *functionDeclaration) {
         return;
     }
 
-    size_t argCount = functionDeclaration->parameters.size();
-    auto inst = getInstantiationByStackArguments(functionDeclaration, argCount);
     if (!inst) {
         inst = createInstantiation(functionDeclaration);
-        typecheckInstantiationAgainstStack(this, inst, argCount);
-        compileFunctionInstantiation(*inst);
+        typecheckInstantiationAgainstStack(this, inst, call.argCount);
+        compileFunctionInstantiation(inst);
     }
     
-    typecheckEndFunctionCall(this, inst->function, argCount);
+    typecheckEndFunctionCall(this, inst->function, call.argCount);
 
     if (functionDeclaration->isStatic || isBytecode) { 
-        vmWriter->functionCall(*inst, argCount);
-    } else ast->functionCall(*inst, argCount);
+        vmWriter->functionCall(*inst, call.argCount);
+    } else ast->functionCall(*inst, call.argCount);
 }
 
 
@@ -590,7 +663,7 @@ void Parser::callLambda(ExpressionState es) {
     newCompiler.inlinedFromTop = compiler->inlinedFromTop;
     newCompiler.nextStackOffset = compiler->nextStackOffset;
 
-    argumentList(funDecl);
+    argumentList();
     inlineFunction(&newCompiler, funDecl);
 
     assert(compiler->expressionTypeStack.size()); // TBH maybe there isn't one?

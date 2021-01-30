@@ -7,7 +7,7 @@ var apple = 5
 var banana = 4 + (apple + 2) / 3 - 2
 var thing = @string(indented) "
         \"jax\" is cool
-        apple = $apple
+        apple = {apple}
         banana = $banana
 "
 
@@ -61,9 +61,7 @@ me.firstname = "Jake"
 me.lastname = "Someone"
 me.age = 200
 
-var fn = me.firstname
-var ln = me.lastname
-assert("fullname is $fn $ln" == "fullname is Jake Someone")
+assert("fullname is {me.firstname} {me.lastname}" == "fullname is Jake Someone")
 
 
 fun compare(x, y): bool {
@@ -82,7 +80,7 @@ fun fib(n): number {
 
 var correct = fib(35) == 9227465
 assert(correct)
-print("was correct? $correct")
+print("was correct? {correct}")
 //print("{}", fib(3))
 
 var time = clock_seconds() - start

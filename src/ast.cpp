@@ -5,7 +5,7 @@ using std::endl;
 struct Expr;
 struct Declaration;
 
-struct FunctionCall {
+struct FunctionCallAst {
     FunctionDeclaration *functionDeclaration;
     FunctionInstantiation instantiation;
     int argCount;
@@ -60,7 +60,7 @@ struct Unit {
 struct Expr {
     Type type;
 
-    mpark::variant<FunctionCall, FunctionCallNative, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
+    mpark::variant<FunctionCallAst, FunctionCallNative, InfixExpr, PropertyExpr, StringLiteral, NumberLiteral,
         BooleanLiteral, AssignmentExpr, VariableLiteral, ArrayLiteral, TypeLiteral, Unit> variant;
 };
 
@@ -70,7 +70,7 @@ struct FunDeclaration {
 };
 struct FunInstantiation {
     FunDeclaration *decl;
-    FunctionInstantiation inst;
+    FunctionInstantiation *inst;
 };
 struct VarDeclaration {
     std::string_view name;
@@ -300,7 +300,7 @@ struct AstGen {
         }
         auto expr = newExpr();
         expr->type = parser->compiler->expressionTypeStack.back();
-        auto call = makeVariant<FunctionCall>(expr);
+        auto call = makeVariant<FunctionCallAst>(expr);
         call->argCount = argCount;
         call->arguments = args;
         call->instantiation = inst;
@@ -425,7 +425,7 @@ struct AstGen {
         delete oldBlock;
     }
 
-    void beginFunctionDeclaration(FunctionInstantiation inst) {
+    void beginFunctionDeclaration(FunctionInstantiation *inst) {
         auto decl = pushNewDeclaration();
         auto func = makeVariant<FunDeclaration>(decl);
         functionInstantiations.push_back({func, inst});
@@ -482,6 +482,8 @@ const char *tabs[] = {
     "", "  ", "    ", "      ", "        ",
 };
 
+std::string typeToString(Type type);
+
 struct CodeGen {
 
     Parser *parser = nullptr;
@@ -502,38 +504,21 @@ struct CodeGen {
     }
 
     void addTypeName(Type type) {
-        if (type == types::Void)          { ss << "void"; }
-        else if (type == types::Number)   { ss << "double"; }
-        else if (type == types::Bool)     { ss << "bool"; }
-        else if (type == types::String)   { ss << "string"; }
-        else if (type == types::Dynamic)  { ss << "dynamic"; }
-        else if (type == types::Unknown)  { ss << "UNKNOWN"; }
-        else if (type == types::Function) { ss << "FUNCTION"; }
-        else {
-            if (type->isPrimitive()) {
-                ss << type->primitiveTypeData()->name;
-            } else if (type->isStruct()) {
-                ss << type->structTypeData()->name;
-            } else if (type->isArray()) {
-                ss << "array_base";
-            } else {
-                assert(0 && "Can't writer typename.");
-            }
-        }
+        ss << typeToString(type);
     }
 
     void addFunctions(std::vector<FunInstantiation> &insts) {
         for (auto instAst : insts) {
-            auto functionType = instAst.inst.type->functionTypeData();
+            auto functionType = instAst.inst->type->functionTypeData();
             Type returnType = functionType->returnType;
 
             addTypeName(returnType);
-            ss << " " << instAst.inst.renamedTo << "(";
+            ss << " " << instAst.inst->renamedTo << "(";
             size_t i = 0;
-            for (auto param : instAst.inst.declaration->parameters) {
+            for (auto param : instAst.inst->declaration->parameters) {
                 addTypeName(functionType->parameterTypes[i]);
                 ss << " " << param.name;
-                if (i < instAst.inst.declaration->parameters.size() - 1) {
+                if (i < instAst.inst->declaration->parameters.size() - 1) {
                     ss << ", ";
                 }
                 i++;
@@ -609,7 +594,7 @@ struct CodeGen {
                 addTypeName(ty.type);
             },
             [&](Unit &u) {},
-            [&](FunctionCall &call) {
+            [&](FunctionCallAst &call) {
                 ss << call.instantiation.renamedTo;
                 ss << "(";
                 size_t i = 0; 

@@ -49,10 +49,10 @@ static int runFile(CompileOptions compileOptions, const std::string &path) {
 
     std::string source = readFile(path);
     
-    double startTimeCompile = clock_ms();
+    double compileStringStartTime = clock_ms();
     std::ostringstream output;
     bool success = compileToString(compileOptions, source, output);
-    double compileTime = clock_ms() - startTimeCompile;
+    double compileStringTime = clock_ms();
 
     
 
@@ -66,24 +66,24 @@ static int runFile(CompileOptions compileOptions, const std::string &path) {
     myfile.open("output.c");
     myfile << output.str() << endl;
     myfile.close();
-
+    double fileWriteTime = clock_ms();
 
     int res = system("clang -Wno-unused-value output.c -o output");
-    double everythingTime = clock_ms() - startTime;
+    double compileTime = clock_ms();
 
     if (res != 0) return res;
 
-    double startRuntime = clock_ms();
-    printf("\n\n");
     int programResult = system("./output");
 
     if (programResult != 0) return programResult;
-
-    double runTime = clock_ms() - startRuntime;
+    double runTime = clock_ms();
+    
     printf("\n\n\n");
-    printf("Compile to c string: %fms\n", compileTime);
-    printf("File op + c compile: %fms\n", (everythingTime - compileTime));
-    printf("           Run time: %fms\n", runTime);
+    printf("Compile to c string: %fms\n", (compileStringTime - compileStringStartTime));
+    printf("            file op: %fms\n", (fileWriteTime - compileStringTime));
+    printf("          c compile: %fms\n", (compileTime - fileWriteTime));
+    printf("           Run time: %fms\n", (runTime - compileTime));
+    printf("\n");
 
     return 0;
 }
@@ -104,7 +104,7 @@ static void runTests() {
     int fails = 0;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
-        printf("--- Testing: %s -------------------------\n", entry->d_name);
+        printf("--- Testing: %s -------------------------\n\n", entry->d_name);
         int res = runFile(compileOptions, std::string("test/") + std::string(entry->d_name));
         if (res == 0) successes ++;
         else fails ++;
@@ -140,6 +140,7 @@ int main(int argc, const char* argv[]) {
         if (strcmp(argv[1], "test") == 0) {
             runTests();
         } else {
+            printf("\n\n");
             runFile(compileOptions, argv[1]);
         }
     } else {

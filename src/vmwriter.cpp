@@ -151,8 +151,8 @@ struct VmWriter {
         }
     }
 
-    void beginFunctionDeclaration(FunctionInstantiation &inst) {
-        function = inst.compiler->function;
+    void beginFunctionDeclaration(FunctionInstantiation *inst) {
+        function = inst->compiler->function;
     }
     void endFunctionDeclaration(Compiler *prevCompiler) {
         function = prevCompiler->function;

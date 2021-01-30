@@ -12,9 +12,9 @@ static {
   
   var cs = clock_seconds()
 
-  print("This is $cs printing at compile time: $cool_thing")
-  add_code("var compile_value = $cool_thing\n")
-  add_code("print(\"compile value is \$compile_value\")\n")
+  print("This is {cs} printing at compile time: {cool_thing}")
+  add_code("var compile_value = {cool_thing}\n")
+  add_code("print(\"compile value is \{compile_value}\")\n")
 }
 assert(compile_value == 512)
 

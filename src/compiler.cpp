@@ -59,7 +59,8 @@ struct FunctionDeclaration {
     Type returnType = types::Unknown;
 
     Compiler *enclosingCompiler;
-    std::vector<FunctionInstantiation> overloads;
+    std::vector<size_t> overloadIndices;
+    // std::vector<FunctionInstantiation> overloads;
 
     bool polymorphic = false;
     bool isExtern = false;
@@ -82,12 +83,28 @@ struct StringParseFlags {
     bool indented;
 };
 
+struct FunctionCall {
+    FunctionDeclaration *declaration = nullptr;
+    FunctionInstantiation *instantiation = nullptr;
+    size_t argCount = 0;
+};
+
+struct FunctionName {
+    // This contains all instantiations regardless of scope
+    // so we can use it to rename overloaded functions.
+    // std::string name;
+    std::vector<size_t> instantiationIndices;
+};
+
 struct Parser {
     Scanner *scanner;
     Compiler *compiler;
 
     std::vector<Type> types;
     std::map<std::string, Type> typesByName;
+
+    std::vector<FunctionInstantiation*> functionInstantiations;
+    std::map<std::string, FunctionName> functionNames;
 
     AstGen *ast;
     VmWriter *vmWriter;
@@ -119,8 +136,7 @@ struct Parser {
     void initCompiler(Compiler *compiler);
     ObjFunction *endCompiler();
     Type inlineFunction(Compiler *newCompiler, FunctionDeclaration *funDecl);
-    FunctionInstantiation *getInstantiationByStackArguments(FunctionDeclaration *functionDeclaration, int argCount);
-    void compileFunctionInstantiation(FunctionInstantiation &functionDeclaration);
+    void compileFunctionInstantiation(FunctionInstantiation *functionDeclaration);
     FunctionInstantiation *createInstantiation(FunctionDeclaration *functionDeclaration);
 
     void beginScope();
@@ -165,9 +181,17 @@ struct Parser {
 
     void lambdaContents();
     void functionParameters(FunctionDeclaration *functionDeclaration);
-    size_t argumentList(FunctionDeclaration *funDecl);
-    void callFunction(FunctionDeclaration *functionDeclaration);
+    size_t argumentList();
+    void callFunction(FunctionCall call);
 
+    template <typename... Args>
+    void errorAtCurrent(const char *fmt, const Args&... args) {
+        errorAt(scanner->currentToken, tfm::format(fmt, args...));
+    }
+    template <typename... Args>
+    void error(const char *fmt, const Args&... args) {
+        errorAt(scanner->previousToken, tfm::format(fmt, args...));
+    }
 
     void errorAtCurrent(const std::string &message) {
         errorAt(scanner->currentToken, message);
@@ -216,7 +240,7 @@ struct Compiler {
     }
 
     int resolveLocal(const std::string_view &name);
-    FunctionDeclaration *resolveFunctionDeclaration(const std::string_view &name);
+    // FunctionDeclaration *resolveFunctionDeclaration(const std::string_view &name);
     Local &declareVariable(Parser* parser, const std::string_view& name);
     void handleRenames(Parser *parser, Local &newLocal);
     void markInitialized();
@@ -253,11 +277,13 @@ void registerNative(
     auto native = new ObjNative{type, nativeFn};
     // TODO: garbage collection
     auto functionName = new ObjString{name};
-    FunctionInstantiation inst = {type, native, nullptr, nullptr, name};
+    FunctionInstantiation *inst = new FunctionInstantiation {type, native, nullptr, nullptr, name};
+    parser->functionInstantiations.push_back(inst);
+
     auto constant = parser->makeConstant(native);
 
     auto decl = new FunctionDeclaration;
-    inst.declaration = decl;
+    inst->declaration = decl;
 
     decl->name = functionName->text;
     decl->parameters = parameters;
@@ -266,7 +292,7 @@ void registerNative(
     decl->enclosingCompiler = nullptr;
     decl->isExtern = true;
     decl->constant = constant;
-    decl->overloads = {inst};
+    decl->overloadIndices = {parser->functionInstantiations.size() - 1};
     parser->compiler->functionDeclarations.push_back(decl);
 }
 
@@ -301,6 +327,27 @@ bool compileToString(CompileOptions compileOptions, const std::string &source, s
     
 }
 
+std::string typeToString(Type type) {
+    if (type == types::Void)          { return "void"; }
+    else if (type == types::Number)   { return "double"; }
+    else if (type == types::Bool)     { return "bool"; }
+    else if (type == types::String)   { return "string"; }
+    else if (type == types::Dynamic)  { return "dynamic"; }
+    else if (type == types::Unknown)  { return "UNKNOWN"; }
+    else if (type == types::Function) { return "FUNCTION"; }
+    else {
+        if (type->isPrimitive()) {
+            return type->primitiveTypeData()->name;
+        } else if (type->isStruct()) {
+            return type->structTypeData()->name;
+        } else if (type->isArray()) {
+            return "array_base";
+        } else {
+            assert(0 && "Can't stringify typename.");
+        }
+    }
+}
+
 
 int Compiler::resolveLocal(const std::string_view &name) {
     for (int i = locals.size() - 1; i >= 0; i--) {
@@ -314,16 +361,6 @@ int Compiler::resolveLocal(const std::string_view &name) {
     }
 
     return -1;
-}
-
-FunctionDeclaration *Compiler::resolveFunctionDeclaration(const std::string_view &name) {
-    for (size_t i = 0; i < functionDeclarations.size(); i++) {
-        if (functionDeclarations[i]->name == name) {
-            return functionDeclarations[i];
-        }
-    }
-    if (enclosing) { return enclosing->resolveFunctionDeclaration(name); }
-    return nullptr;
 }
 
 void Compiler::handleRenames(Parser *parser, Local &newLocal) {
@@ -425,7 +462,7 @@ void Parser::advance() {
     while (true) {
         scanner->advanceToken();
         if (current().type == TokenType::Error) {
-            errorAtCurrent(std::string(current().text));
+            errorAtCurrent("%s", std::string(current().text));
             continue;
         }
         break;
@@ -548,11 +585,11 @@ ObjFunction *Parser::endCompiler() {
     for (FunctionDeclaration *funDecl : compiler->functionDeclarations) {
         if (funDecl->polymorphic) continue;
         if (funDecl->isInline) continue;
-        if (funDecl->overloads.size() != 0) continue;
+        if (funDecl->overloadIndices.size() != 0) continue;
 
         auto inst = createInstantiation(funDecl);
         typecheckInstantiationFromArgumentList(this, inst);
-        compileFunctionInstantiation(*inst);
+        compileFunctionInstantiation(inst);
     }
     
     if (isBytecode) vmWriter->endCompiler(); // TODO: Is this ever needed?
@@ -924,8 +961,11 @@ void Parser::forStatement() {
 
     typecheckLambda(this);
 
-    auto functionDeclaration = compiler->resolveFunctionDeclaration("iterate");
-    callFunction(functionDeclaration);
+    // auto functionDeclaration = compiler->resolveFunctionDeclaration("iterate");
+    // size_t argCount = 2;
+    // callFunction(functionDeclaration, argCount);
+    // TODO:!!!!!!!!!!!!!
+    
 
     // For has no result, just treat it like an exprStatement
     ast->exprStatement();
@@ -988,7 +1028,7 @@ void Parser::varDeclaration() {
     compiler->markInitialized();
 
     // Nothing happens the VM - it is just left on the stack
-    if (!isBytecode) {
+    if (!compiler->locals.back().isStatic) {
         ast->varDeclaration(compiler->locals.back(), initializer);
     }
 }
@@ -1061,7 +1101,9 @@ void Parser::arraylit(ExpressionState es) {
         if (numElements == 0) {
             elementType = itElementType;
         } else if (!typecheckIsAssignable(this, elementType, itElementType)) {
-            error("Can't put this is the array .");
+            error(
+                "The element type of this array is '%s', cannot assign a value of type '%s'.",
+                typeToString(elementType), typeToString(itElementType));
         }
         numElements ++;
         if (match(TokenType::RightSquare)) break;
@@ -1454,24 +1496,21 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
         return;
     }
     
-    FunctionDeclaration *functionDeclaration = compiler->resolveFunctionDeclaration(name);
+    if (match(TokenType::LeftParen)) {
+        size_t argCount = argumentList();
 
-    if (functionDeclaration != nullptr) {
-        if (es.canAssign && match(TokenType::Equal)) {
-            error("Cannot assign to a function.");
+        auto types = make_span(&compiler->expressionTypeStack[compiler->expressionTypeStack.size() - argCount], (std::ptrdiff_t)argCount);
+        FunctionCall call = resolveFunctionCallByTypes(this, compiler, name, types);
+
+        if (call.declaration == nullptr) {
+            error("No function found with the name '%s' and types.", name);        
+        } else {
+            callFunction(call);
             return;
         }
-
-        if (match(TokenType::LeftParen)) {
-            argumentList(functionDeclaration);
-            callFunction(functionDeclaration);
-        } else {
-            error("Cannot reference function without calling it (yet).");
-        }
-        return;
     }
 
-    error("No variable found.");
+    error("No variable found with the name '%s'.", name);
 }
 
 ParseRule rules[] = {

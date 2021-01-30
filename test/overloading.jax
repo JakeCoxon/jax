@@ -1,0 +1,27 @@
+fun assert(b: bool) @extern
+
+fun thing(x: number): string {
+  return "number is {x}"
+}
+fun thing(s: string): string {
+  return "string is {s}"
+}
+fun thing(a, s: string): string {
+  return "a is {a}, string is {s}"
+}
+fun thing(a, x: number): string {
+  return "a is {a}, number is {x}"
+}
+fun thing(a, b): string {
+  return "a is {a}, b is {b}"
+}
+
+assert(thing(10)               == "number is 10.000000")
+assert(thing("stuff")          == "string is stuff")
+assert(thing("stuff", "stuff") == "a is stuff, string is stuff")
+assert(thing("stuff", 12)      == "a is stuff, number is 12.000000")
+assert(thing(10, "stuff")      == "a is 10.000000, string is stuff")
+assert(thing(20, 12)           == "a is 20.000000, number is 12.000000")
+assert(thing(true, 12)         == "a is true, number is 12.000000")
+assert(thing(true, "stuff")    == "a is true, string is stuff")
+assert(thing(true, true)       == "a is true, b is true")

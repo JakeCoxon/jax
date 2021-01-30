@@ -215,8 +215,12 @@ void typecheckBinary(Parser *parser, TokenType operatorType) {
     };
 
     auto assertEqual = [&]() {
+        // TODO: highlight the proper token here
         if (typeA == types::Void) {
-            parser->error("Type cannot be void.");
+            parser->error("Type cannot be void of left-hand side of operator.");
+        }
+        if (typeB == types::Void) {
+            parser->error("Type cannot be void of right-hand side of operator.");
         }
         if (typeA != typeB) { 
             parser->error("Types don't match");
