@@ -1,6 +1,5 @@
 fun assert(b: bool) @extern
 
-
 fun calloc(num: number, size: number): voidptr @extern
 fun memcpy(dest: voidptr, src: voidptr, size: number): voidptr @extern
 
@@ -21,14 +20,20 @@ fun _new_array_from_literal(len: number, cap: number, elem_size: number, c_array
 }
 
 
-var xs = [1,2,3]
-// print(xs[1] + xs[2])
+var xs = [1, 2, 3]
+
+var thing = "thing"
+var num = 32.2
+var b = false
+var str = "this is a {thing} asd  {num} : {b}"
+print(str)
+
 
 fun iterate(xs, f: lambda) @inline {
   var i = 0
   while i < xs.len {
     f(xs[i])
-    i = i + 1
+    i += 1
   }
 }
 // iterate(xs) {|x| print(x)}

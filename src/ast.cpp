@@ -39,6 +39,7 @@ struct BooleanLiteral {
 struct AssignmentExpr {
     Expr *left;
     Expr *value = nullptr;
+    TokenType operatorType;
 };
 struct VariableLiteral {
     std::string_view name;
@@ -248,11 +249,12 @@ struct AstGen {
         expr->type = parser->compiler->expressionTypeStack.back();
         expressionStack.push_back(expr);
     }
-    void assignment() {
+    void assignment(TokenType operatorType) {
         auto expr = newExpr();
         auto assgn = makeVariant<AssignmentExpr>(expr);
         assgn->value = popExpression();
         assgn->left = popExpression();
+        assgn->operatorType = operatorType;
         expr->type = parser->compiler->expressionTypeStack.back();
         expressionStack.push_back(expr);
     }
@@ -587,7 +589,17 @@ struct CodeGen {
             },
             [&](AssignmentExpr &ex) {
                 addExpr(ex.left);
-                ss << " = ";
+                if (ex.operatorType == TokenType::Equal) {
+                    ss << " = ";
+                } else if (ex.operatorType == TokenType::PlusEqual) {
+                    ss << " += ";
+                } else if (ex.operatorType == TokenType::MinusEqual) {
+                    ss << " -= ";
+                } else if (ex.operatorType == TokenType::StarEqual) {
+                    ss << " *= ";
+                } else if (ex.operatorType == TokenType::SlashEqual) {
+                    ss << " /= ";
+                }
                 addExpr(ex.value, false);
             },
             [&](VariableLiteral &ex) {

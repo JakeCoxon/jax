@@ -12,6 +12,8 @@ enum class TokenType {
     Equal, EqualEqual,
     Greater, GreaterEqual,
     Less, LessEqual,
+    PlusEqual, MinusEqual,
+    SlashEqual, StarEqual,
 
     // Literals.
     Identifier, String, Number,
@@ -159,14 +161,18 @@ Token Scanner::scanToken() {
         case ';': return makeToken(TokenType::Semicolon);
         case ',': return makeToken(TokenType::Comma);
         case '.': return makeToken(TokenType::Dot);
-        case '-': return makeToken(TokenType::Minus);
-        case '+': return makeToken(TokenType::Plus);
-        case '/': return makeToken(TokenType::Slash);
-        case '*': return makeToken(TokenType::Star);
         case ':': return makeToken(TokenType::Colon);
         case '@': return makeToken(TokenType::At);
         case '$': return makeToken(TokenType::Dollar);
         case '|': return makeToken(TokenType::Pipe);
+        case '-': 
+            return makeToken(match('=') ? TokenType::MinusEqual : TokenType::Minus);
+        case '+':
+            return makeToken(match('=') ? TokenType::PlusEqual : TokenType::Plus);
+        case '/':
+            return makeToken(match('=') ? TokenType::SlashEqual : TokenType::Slash);
+        case '*':
+            return makeToken(match('=') ? TokenType::StarEqual : TokenType::Star);
         case '!':
             return makeToken(match('=') ? TokenType::BangEqual : TokenType::Bang);
         case '=':
@@ -256,7 +262,7 @@ Token Scanner::string() {
         if (peek() == '\n') { 
             return makeToken(TokenType::String);
         }
-        else if (peek() == '$' || peek() == '\\') {
+        else if (peek() == '{' || peek() == '\\') {
             return makeToken(TokenType::String);
         }
         advance();
@@ -268,17 +274,34 @@ Token Scanner::string() {
 }
 
 Token Scanner::scanTokenString() {
+
     start = current;
     if (isAtEnd()) return makeToken(TokenType::EOF_);
+
+    if (isStringInterpolation) {
+        if (peek() == '"') {
+            advance();
+            return errorToken("Strings cannot be nested.");
+        } else if (peek() == '}') {
+            advance();
+            isStringInterpolation = false;
+            return makeToken(TokenType::RightBrace);
+        }
+
+        isString = false; // bit hacky
+        Token result = scanToken();
+        isString = true;
+        return result;
+    }
 
     char c = advance();
     if (c == '\n') {
         line ++; lineStart = current + 1;
         return makeToken(TokenType::String);
     }
-    if (c == '$') {
+    if (c == '{') {
         isStringInterpolation = true;
-        return makeToken(TokenType::Dollar);
+        return makeToken(TokenType::LeftBrace);
     }
 
     if (c == '\\') {
@@ -286,7 +309,7 @@ Token Scanner::scanTokenString() {
         
         if (c == '\\') {}
         else if (c == '"') {}
-        else if (c == '$') {}
+        else if (c == '{') {}
         else if (c == 'n') {}
         else { return errorToken("Invalid escape character."); }
         return makeToken(TokenType::String);
@@ -296,10 +319,6 @@ Token Scanner::scanTokenString() {
         return makeToken(TokenType::String);
     }
 
-    if (isStringInterpolation) {
-        isStringInterpolation = false;
-        return identifier();
-    }
 
     return string();
 }

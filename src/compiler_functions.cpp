@@ -258,7 +258,7 @@ void Parser::lambdaContents() {
 
     if (match(TokenType::Pipe)) {
         functionParameters(decl);
-        consume(TokenType::Pipe, "Expected '|' after parameter list.");
+        consume(TokenType::Pipe, "Expect '|' after parameter list.");
     }
     function->arity = decl->parameters.size();
 

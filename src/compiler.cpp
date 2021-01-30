@@ -286,8 +286,8 @@ bool compileToString(CompileOptions compileOptions, const std::string &source, s
 
     parser.advance();
 
+    while (parser.match(TokenType::Newline)) {}
     while (!parser.match(TokenType::EOF_)) {
-        while (parser.match(TokenType::Newline)) {}
         parser.declaration();
         while (parser.match(TokenType::Newline)) {}
     }
@@ -380,7 +380,7 @@ Local &Compiler::declareVariable(Parser *parser, const std::string_view& name) {
         }
 
         if (name == local->name) {
-            parser->error("Already variable with this name in this scope.");
+            parser->error("There is already a variable with this name in this scope.");
         }
     }
     locals.push_back({ name, -1, -1 });
@@ -675,8 +675,8 @@ void Parser::staticDeclaration() {
         advance();
         
         // This is the same as block() but without the end brace
+        while (match(TokenType::Newline)) {}
         while (!check(TokenType::RightBrace) && !check(TokenType::EOF_)) {
-            while (match(TokenType::Newline)) {}
             declaration();
             while (match(TokenType::Newline)) {}
         }
@@ -787,7 +787,7 @@ void Parser::returnStatement() {
         typecheckReturn(this, functionCompiler);
 
         if (inlinedReturnLocal) {
-            ast->assignment();
+            ast->assignment(TokenType::Equal);
             ast->exprStatement();
         }
     }
@@ -998,8 +998,8 @@ void Parser::expression() {
 }
 
 void Parser::block() {
+    while (match(TokenType::Newline)) {}
     while (!check(TokenType::RightBrace) && !check(TokenType::EOF_)) {
-        while (match(TokenType::Newline)) {}
         declaration();
         while (match(TokenType::Newline)) {}
     }
@@ -1203,41 +1203,34 @@ void Parser::stringAdvanced(StringParseFlags spf) {
     int numArgs = 0;
 
     while (true) {
-        if (match(TokenType::Dollar)) {
-            consume(TokenType::Identifier, "Expect identifier after '$'.");
+        if (match(TokenType::LeftBrace)) {
 
-            Token iden = previous();
+            expression();
 
-            int arg = compiler->resolveLocal(iden.text);
-            if (arg == -1) {
-                errorAt(iden, "Couldn't find variable.");
-                continue;
-            }
+            auto type = compiler->expressionTypeStack.back();
+            compiler->expressionTypeStack.pop_back();
 
-            Local *local = &compiler->locals[arg];
             if (isBytecode) {
-                vmWriter->namedVariable(local, false);
-                if (local->type == types::Number || local->type == types::Bool) {
+                if (type == types::Number || type == types::Bool) {
                     vmWriter->doubleToString();
                 }
             } else {
-                compiler->expressionTypeStack.push_back(local->type);
-                ast->variable(local);
-                if (local->type == types::Bool) {
+                if (type == types::Bool) {
                     ast->functionCallNative("_bool_to_string", 1);
                 }
-                compiler->expressionTypeStack.pop_back();
             }
 
-            if (local->type == types::Number) ss << "%f";
-            else if (local->type == types::String) ss << "%s";
-            else if (local->type == types::Bool) ss << "%s";
-            else if (local->type == types::VoidPtr) ss << "%p";
+            if (type == types::Number) ss << "%f";
+            else if (type == types::String) ss << "%s";
+            else if (type == types::Bool) ss << "%s";
+            else if (type == types::VoidPtr) ss << "%p";
             else {
                 error("Cannot format this type.");
             }
 
             numArgs ++;
+
+            consume(TokenType::RightBrace, "Expect '}' after expression.");
 
         }
         else if (match(TokenType::String)) {
@@ -1260,7 +1253,8 @@ void Parser::stringAdvanced(StringParseFlags spf) {
                 ss << previous().text;
             }
         } else {
-            error("Unexpected token.");
+            errorAtCurrent("Unexpected token.");
+            break;
         }
     }
 
@@ -1390,11 +1384,16 @@ void Parser::dot(ExpressionState es) {
         ast->property(property);
     }
   
-    if (es.canAssign && match(TokenType::Equal)) {
+    if (es.canAssign && (
+        match(TokenType::Equal) || 
+        match(TokenType::PlusEqual) || match(TokenType::MinusEqual) ||
+        match(TokenType::SlashEqual) || match(TokenType::StarEqual)
+    )) {
+        TokenType operatorType = previous().type;
         expression();
         typecheckAssignExpression(this);
         if (!isBytecode) {
-            ast->assignment();
+            ast->assignment(operatorType);
         }
         // emitBytes(OP_SET_PROPERTY, name); // TODO:
     } else {
@@ -1438,13 +1437,17 @@ void Parser::namedVariable(const std::string_view &name, ExpressionState es) {
             else ast->variable(local);
         }
 
-        if (es.canAssign && match(TokenType::Equal)) {
+        if (es.canAssign && (match(TokenType::Equal) || 
+            match(TokenType::PlusEqual) || match(TokenType::MinusEqual) ||
+            match(TokenType::SlashEqual) || match(TokenType::StarEqual))
+        ) {
+            TokenType operatorType = previous().type;
             expression();
             typecheckAssignExpression(this);
             // TODO: WARNING!! local may have changed at this pointer
             // due to inlining
             if (isBytecode) vmWriter->namedVariable(local, true);
-            else ast->assignment();
+            else ast->assignment(operatorType);
         } else {
             if (isBytecode) vmWriter->namedVariable(local, false);
         }
@@ -1497,6 +1500,10 @@ ParseRule rules[] = {
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // GreaterEqual
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // Less
     {nullptr,           &Parser::binary,   Precedence::Comparison}, // LessEqual
+    {nullptr,           nullptr,           Precedence::None},       // PlusEqual
+    {nullptr,           nullptr,           Precedence::None},       // SlashEqual
+    {nullptr,           nullptr,           Precedence::None},       // MinusEqual
+    {nullptr,           nullptr,           Precedence::None},       // StarEqual
     {&Parser::variable, nullptr,           Precedence::None},       // Identifier
     {&Parser::string,   nullptr,           Precedence::None},       // String
     {&Parser::number,   nullptr,           Precedence::None},       // Number
