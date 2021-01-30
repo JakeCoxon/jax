@@ -1,21 +1,3 @@
-template <typename T>
-struct span {
-    span(T* first, T* last) : begin_ {first}, end_ {last} {}
-    span(T* first, std::ptrdiff_t size)
-        : span {first, first + size} {}
-
-    T*  begin() const noexcept { return begin_; }
-    T*  end() const noexcept { return end_; }
-
-    T* begin_;
-    T* end_;
-};
-
-template <typename T>
-span<T> make_span(T* first, std::ptrdiff_t size) noexcept
-{ return {first, size}; }
-
-
 
 FunctionInstantiation *getInstantiationByTypes(Parser *parser, FunctionDeclaration *functionDeclaration, span<Type> types) {
     // @speed slow as hell
@@ -27,10 +9,6 @@ FunctionInstantiation *getInstantiationByTypes(Parser *parser, FunctionDeclarati
         bool isMatched = true;
         size_t i = 0;
         for (auto toMatchType : types) {
-        // for (size_t i = 0; i < functionDeclaration->parameters.size(); i++) {
-            // size_t end = compiler->expressionTypeStack.size();
-            // Type argumentType = compiler->expressionTypeStack[end - argCount + i];
-
             if (!typecheckIsAssignable(parser, functionTypeObj->parameterTypes[i], toMatchType)) {
                 isMatched = false;
                 break;

@@ -1,3 +1,5 @@
+fun assert(b: bool) @extern
+
 fun calloc(num: number, size: number): voidptr @extern
 fun memcpy(dest: voidptr, src: voidptr, size: number): voidptr @extern
 
@@ -19,9 +21,16 @@ fun _new_array_from_literal(len: number, cap: number, elem_size: number, c_array
 
 var a = [10, 2.22, 33123123.0, 123123, 2.34]
 
-var i = 0
-while i < a.len {
-  var v = a[i]
-  print("iterating: $v")
-  i = i + 1
+fun iterate(a, f: lambda) @inline {
+  var i = 0
+  while i < a.len {
+    f(a[i])
+    i += 1
+  }
 }
+
+var total = 0
+for x in a {
+  total += x
+}
+assert(total == 33246260.560000)

@@ -1,0 +1,19 @@
+fun assert(b: bool) @extern
+
+{
+  struct thing {}
+  var x: thing
+
+  fun iterate(x, f: lambda) @inline {
+    f(1)
+    f(2)
+    f(3)
+  }
+
+  var total = 0
+  for y in x {
+    total += y
+  }
+  assert(total == 6)
+
+}

@@ -4,6 +4,24 @@
 
 #define UINT8_COUNT (UINT8_MAX + 1)
 
+template <typename T>
+struct span {
+    span(T* first, T* last) : begin_ {first}, end_ {last} {}
+    span(T* first, std::ptrdiff_t size)
+        : span {first, first + size} {}
+
+    T*  begin() const noexcept { return begin_; }
+    T*  end() const noexcept { return end_; }
+
+    T* begin_;
+    T* end_;
+};
+
+template <typename T>
+span<T> make_span(T* first, std::ptrdiff_t size) noexcept
+{ return {first, size}; }
+
+
 enum class Precedence {
     None,
     Assignment,  // =
@@ -924,6 +942,8 @@ void Parser::forStatement() {
     consume(TokenType::In, "Expect 'in' after identifier.");
     expression();
 
+    Type iterableType = compiler->expressionTypeStack.back();
+
     consume(TokenType::LeftBrace, "Expect '{' after expression.");
 
     auto function = new ObjFunction(); // @leak
@@ -961,26 +981,19 @@ void Parser::forStatement() {
 
     typecheckLambda(this);
 
-    // auto functionDeclaration = compiler->resolveFunctionDeclaration("iterate");
-    // size_t argCount = 2;
-    // callFunction(functionDeclaration, argCount);
-    // TODO:!!!!!!!!!!!!!
-    
+    Type types[] = { iterableType, types::Lambda };
+    FunctionCall call = resolveFunctionCallByTypes(this, compiler, "iterate", make_span(types, 2));
+    if (!call.declaration) {
+        error("Cannot find iterate function for type '%s'.", typeToString(iterableType));
+        return;
+    }
+
+    callFunction(call);
 
     // For has no result, just treat it like an exprStatement
     ast->exprStatement();
 
     typecheckEndStatement(this);
-
-    // beginScope();
-    // if (!isBytecode) ast->beginWhileStatementBlock();
-    // typecheckIfCondition(this);
-
-    // block();
-    // if (!isBytecode) ast->endBlock();
-    // endScope();
-
-    // if (isBytecode) vmWriter->endWhileStatementBlock(&patchState);
 
     consumeEndStatement("Expect ';' or newline after block.");
 }
