@@ -1,4 +1,27 @@
 
+std::string typeToString(Type type) {
+    if (type == types::Void)          { return "void"; }
+    else if (type == types::Number)   { return "double"; }
+    else if (type == types::Bool)     { return "bool"; }
+    else if (type == types::String)   { return "string"; }
+    else if (type == types::Dynamic)  { return "dynamic"; }
+    else if (type == types::Unknown)  { return "UNKNOWN"; }
+    else if (type == types::Function) { return "FUNCTION"; }
+    else if (type == types::Array)    { return "array"; }
+    else {
+        if (type->isPrimitive()) {
+            return type->primitiveTypeData()->name;
+        } else if (type->isStruct()) {
+            return type->structTypeData()->name;
+        } else if (type->isArray()) {
+            // This is the underlying C type we use
+            return "array_base";
+        } else {
+            assert(0 && "Can't stringify typename.");
+        }
+    }
+}
+
 int slotSizeOfType(Type type) {
     if (type == types::Void) return 0;
     if (type == types::Number || type == types::Void || type == types::Bool) {
@@ -26,7 +49,11 @@ Type addNewType(Parser *parser, T typeData) {
 }
 
 template<typename T>
-Type addNamedType(Parser *parser, const std::string &name, T typeData) {
+Type addNamedType(Parser *parser, std::string name, T typeData) {
+    if (parser->typesByName.count(name)) {
+        parser->error("A type with the name '%s' already exists.", name);
+        return parser->typesByName[name];
+    }
     auto type = addNewType(parser, typeData);
     parser->typesByName[name] = type;
     return type;
@@ -65,13 +92,25 @@ void typecheckPop(Parser *parser) {
 }
 
 bool typecheckIsAssignable(Parser *parser, Type typeA, Type typeB) {
-    if (typeA == types::Dynamic) {
-        return true;    
+    if (typeA == typeB) return true;
+    if (typeA == types::Dynamic) return true;    
+    if (typeA == types::Array && typeB->isArray()) return true;
+    
+    if (typeA->isArray() && typeB->isArray()) {
+        // TODO: dedup these types
+        return typeA->arrayTypeData()->elementType == typeB->arrayTypeData()->elementType;
     }
     if (typeB == types::Void) {
         return (typeA != types::Number && typeA != types::Bool);
     }
-    return typeA == typeB;
+    return false;
+}
+
+bool typecheckIsTypeConstructableFrom(Parser *parser, Type typeA, Type typeB) {
+    if (typeA == types::Array && typeB->isArray()) { return true; }
+    if (typeA == types::Unknown) return true;
+    if (typeA == types::Void) return true; // TODO: Why void?
+    return false;
 }
 
 void typecheckEndStatement(Parser *parser) {
@@ -96,7 +135,7 @@ void typecheckIfCondition(Parser *parser) {
 void typecheckVarDeclarationInitializer(Parser *parser, Local &local) {
     Type initializeType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
-    if (local.type == types::Void || local.type == types::Unknown) { // TODO: Why void?
+    if (typecheckIsTypeConstructableFrom(parser, local.type, initializeType)) {
         local.type = initializeType;
     }
     if (local.type == types::Lambda) {
@@ -140,7 +179,7 @@ void typecheckPropertyAccess(Parser *parser, const std::string_view& propertyNam
         return;
     }
     if (!mainType->isStruct()) {
-        parser->error("Cannot access a non-struct object.");
+        parser->error("Cannot access a member of type '%s', must be a struct.", typeToString(mainType));
         return;
     }
 
@@ -177,17 +216,16 @@ void typecheckArrayAccess(Parser *parser) {
     Type indexType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
     if (!typecheckIsAssignable(parser, indexType, types::Number)) {
-        parser->error("Can only index with a number.");
+        parser->error("Cannot index using type '%s', must be a number.", typeToString(indexType));
         return;
     }
 
     Type arrayType = parser->compiler->expressionTypeStack.back();
     parser->compiler->expressionTypeStack.pop_back();
     if (!arrayType->isArray()) {
-        parser->error("Can only index an array.");
+        parser->error("Cannot index a type '%s', must be an array.", typeToString(arrayType));
         return;
     }
-
 
     parser->compiler->expressionTypeStack.push_back(arrayType->arrayTypeData()->elementType);
 }

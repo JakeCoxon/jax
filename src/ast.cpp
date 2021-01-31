@@ -649,12 +649,18 @@ struct CodeGen {
                 else if (type == types::String) ss << "%s";
                 else if (type == types::Bool) ss << "%s";
                 else if (type == types::VoidPtr) ss << "%p";
+                else if (type->isStruct()) ss << "%s";
+                else if (type->isFunction()) ss << "%s";
+                else if (type->isArray()) ss << "%s";
                 else {
                     assert(0 && "Printing not implemented for this type");
                 }
                 ss << "\\n\", ";
                 if (type == types::Bool) { 
                     ss << "("; addExpr(print.argument, false); ss << " ? \"true\" : \"false\")";
+                } else if (type->isStruct()) { ss << "\"<struct " + type->structTypeData()->name + ">\"";
+                } else if (type->isFunction()) { ss << "\"<function>\"";
+                } else if (type->isArray()) { ss << "\"<array>\"";
                 } else { addExpr(print.argument, false); }
                 ss << ")";
                 ss << ";" << endl;

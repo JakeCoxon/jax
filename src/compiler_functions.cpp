@@ -187,8 +187,11 @@ void Parser::functionParameters(FunctionDeclaration *decl) {
             decl->hasLambdas = true;
             decl->parameters.back().isStatic = true;
         }
-        if (argumentType == types::Unknown) {
-            decl->polymorphic = true;
+        if (argumentType->isPrimitive()) {
+            auto prim = argumentType->primitiveTypeData();
+            if (prim->constructor) {
+                decl->polymorphic = true;
+            }
         }
     } while (match(TokenType::Comma));
 }

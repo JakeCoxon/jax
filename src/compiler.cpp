@@ -345,26 +345,6 @@ bool compileToString(CompileOptions compileOptions, const std::string &source, s
     
 }
 
-std::string typeToString(Type type) {
-    if (type == types::Void)          { return "void"; }
-    else if (type == types::Number)   { return "double"; }
-    else if (type == types::Bool)     { return "bool"; }
-    else if (type == types::String)   { return "string"; }
-    else if (type == types::Dynamic)  { return "dynamic"; }
-    else if (type == types::Unknown)  { return "UNKNOWN"; }
-    else if (type == types::Function) { return "FUNCTION"; }
-    else {
-        if (type->isPrimitive()) {
-            return type->primitiveTypeData()->name;
-        } else if (type->isStruct()) {
-            return type->structTypeData()->name;
-        } else if (type->isArray()) {
-            return "array_base";
-        } else {
-            assert(0 && "Can't stringify typename.");
-        }
-    }
-}
 
 
 int Compiler::resolveLocal(const std::string_view &name) {

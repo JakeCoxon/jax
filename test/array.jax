@@ -19,15 +19,33 @@ fun _new_array_from_literal(len: number, cap: number, elem_size: number, c_array
   return a
 }
 
+// Polymorphic function doesn't duplicate for different arrays
+// because the element types are the same
 var a = [10, 2.22, 33123123.0, 123123, 2.34]
+var b = [1,2,3,5]
 
-fun iterate(a, f: lambda) @inline {
+fun hello(a: array) {
+  print(a[0])
+}
+
+hello(a)
+hello(b)
+
+// 'array' is a type constructor so the array type is
+// constructable from the concrete type a. constructable
+// isn't the right word here?
+var thing: array = a
+assert(thing[0] + thing[1] == 12.22)
+
+// for loops of arrays
+fun iterate(a: array, f: lambda) @inline {
   var i = 0
   while i < a.len {
     f(a[i])
     i += 1
   }
 }
+
 
 var total = 0
 for x in a {

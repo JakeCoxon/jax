@@ -146,6 +146,13 @@ struct TypeData;
 
 struct PrimitiveTypeData {
     std::string name;
+
+    // Constructor means this type is a type constructor (loosely)
+    // types like lambda and array are constructors and cannot be
+    // instantiated directly. functions using these types are polymorphic
+    bool constructor = false;
+    PrimitiveTypeData(std::string name): name(name), constructor(false) {}
+    PrimitiveTypeData(std::string name, bool constructor): name(name), constructor(constructor) {}
 };
 struct FunctionTypeData {
     std::vector<TypeData*> parameterTypes;
@@ -177,22 +184,24 @@ struct TypeData {
     bool isStruct() { return mpark::holds_alternative<StructTypeData>(variant); }
     bool isArray() { return mpark::holds_alternative<ArrayTypeData>(variant); }
 
+    bool isTypeConstructor() { return isPrimitive() && primitiveTypeData()->constructor; }
+
 };
 using Type = TypeData*;
 
 int slotSizeOfType(Type type);
 
 namespace types {
-    const Type Void     = new TypeData{0, PrimitiveTypeData{"void"}};
-    const Type Number   = new TypeData{1, PrimitiveTypeData{"number"}};
-    const Type Bool     = new TypeData{2, PrimitiveTypeData{"bool"}};
-    const Type String   = new TypeData{3, PrimitiveTypeData{"string"}};
-    const Type Dynamic  = new TypeData{4, PrimitiveTypeData{"dynamic"}};
-    const Type Unknown  = new TypeData{5, PrimitiveTypeData{"unknown"}};
-    const Type Function = new TypeData{6, PrimitiveTypeData{"function"}};
-    const Type VoidPtr  = new TypeData{7, PrimitiveTypeData{"voidptr"}};
-    const Type Array    = new TypeData{8, PrimitiveTypeData{"array"}};
-    const Type Lambda   = new TypeData{9, PrimitiveTypeData{"lambda"}};
+    const Type Void     = new TypeData{0, PrimitiveTypeData("void")};
+    const Type Number   = new TypeData{1, PrimitiveTypeData("number")};
+    const Type Bool     = new TypeData{2, PrimitiveTypeData("bool")};
+    const Type String   = new TypeData{3, PrimitiveTypeData("string")};
+    const Type Dynamic  = new TypeData{4, PrimitiveTypeData("dynamic")};
+    const Type Unknown  = new TypeData{5, PrimitiveTypeData("unknown", true)};
+    const Type Function = new TypeData{6, PrimitiveTypeData("function", true)};
+    const Type VoidPtr  = new TypeData{7, PrimitiveTypeData("voidptr")};
+    const Type Array    = new TypeData{8, PrimitiveTypeData("array", true)};
+    const Type Lambda   = new TypeData{9, PrimitiveTypeData("lambda", true)};
 }
 
 struct FunctionDeclaration;
